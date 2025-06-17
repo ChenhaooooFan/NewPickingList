@@ -1,4 +1,4 @@
-streamlit==1.35.0
-PyPDF2==2.12.1
-fpdf==1.7.2
-pandas==2.2.2
+pandas
+matplotlib
+seaborn
+streamlit
