@@ -5,7 +5,7 @@ import fitz  # PyMuPDF
 
 st.set_page_config(page_title="拣货单汇总工具", layout="centered")
 st.title("📦 NailVesta 拣货单产品名汇总工具")
-st.caption("提取商品名称 + 尺码 + 数量，并按 S/M/L 排序")
+st.caption("提取商品名称 + 尺码 + 数量，并验证总数是否一致")
 
 uploaded_file = st.file_uploader("请上传 PDF 拣货单文件", type=["pdf"])
 
@@ -15,7 +15,11 @@ if uploaded_file:
     for page in doc:
         text += page.get_text()
 
-    # 匹配产品名 + 尺码 + SKU + 数量
+    # 尝试从 PDF 中抓取总数（Product quantity: 32）
+    total_quantity_match = re.search(r"Product quantity:\s*(\d+)", text)
+    expected_total = int(total_quantity_match.group(1)) if total_quantity_match else None
+
+    # 提取产品名 + 尺码 + SKU + 数量
     pattern = r"([A-Za-z’'’]+(?:\s+[A-Za-z’'’]+)+),\s*([SML])\s*\n([A-Z]{3}\d{3}-[SML])\s+(\d+)"
     matches = re.findall(pattern, text)
 
@@ -28,15 +32,27 @@ if uploaded_file:
         df = pd.DataFrame(data, columns=["Product Name", "Size", "Qty"])
         df_summary = df.groupby(["Product Name", "Size"], as_index=False)["Qty"].sum()
 
-        # 定义 S/M/L 排序逻辑
-        size_order = {"S": 0, "M": 1, "N": 2, "L": 3}
+        # 排序 S/M/L
+        size_order = {"S": 0, "M": 1, "L": 2}
         df_summary["Size Sort"] = df_summary["Size"].map(size_order)
         df_summary = df_summary.sort_values(by=["Product Name", "Size Sort"]).drop(columns=["Size Sort"])
 
-        st.success("✅ 提取成功并排序！")
+        st.success("✅ 提取成功并已排序！")
         st.dataframe(df_summary)
 
-        # 下载
+        # 总数量
+        total_qty = df_summary["Qty"].sum()
+        st.subheader(f"📦 实际拣货总数量：{total_qty}")
+
+        if expected_total is not None:
+            if total_qty == expected_total:
+                st.success(f"✅ 与拣货单标注的总数一致！（{expected_total}）")
+            else:
+                st.error(f"❌ 数量不一致！拣货单写的是 {expected_total}，实际提取为 {total_qty}")
+        else:
+            st.warning("⚠️ 无法识别拣货单标注的总数。")
+
+        # 下载按钮
         csv = df_summary.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 下载为 CSV 文件", data=csv, file_name="product_summary_sorted.csv", mime="text/csv")
     else:
