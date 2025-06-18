@@ -5,10 +5,41 @@ import fitz  # PyMuPDF
 from collections import defaultdict
 
 st.set_page_config(page_title="拣货单汇总工具", layout="centered")
-st.title("📦 NailVesta 拣货单产品名汇总工具")
-st.caption("提取产品名称 + 尺码 + 数量（按订单去重），并验证总数是否一致")
+st.title("📦 NailVesta 拣货单汇总工具")
+st.caption("提取 Seller SKU + 数量，并补全产品名")
 
-uploaded_file = st.file_uploader("请上传 PDF 拣货单文件", type=["pdf"])
+uploaded_file = st.file_uploader("📤 上传拣货 PDF", type=["pdf"])
+
+# ✅ 初始内置对照表（可随时扩展）
+sku_to_name = {
+    "NPJ007-M": "Angel’s Blush",
+    "NPF001-M": "Angel’s Grace",
+    "NPX006-S": "Autumn Petal",
+    "NPX010-S": "Blooming Meadow",
+    "NPF007-M": "Bluebell Glow",
+    "NPX013-S": "Champagne Wishes",
+    "NOF005-S": "Glacier Petal",
+    "NHF001-S": "Gothic Moon",
+    "NOJ001-M": "Island Bloom",
+    "NOJ001-S": "Island Bloom",
+    "NPF008-S": "Lavender Angel",
+    "NPX012-S": "Milky Ribbon",
+    "NOF003-M": "Peach Pop",
+    "NOF003-S": "Peach Pop",
+    "NDX001-S": "Pinky Promise",
+    "NYJ001-S": "Rosy Ribbon",
+    "NOF001-M": "Royal Amber",
+    "NOF001-S": "Royal Amber",
+    "NPX001-L": "Royal Elegance",
+    "NOF004-S": "Sunset Punch",
+    "NOF002-M": "Tiger Lily",
+    "NPF009-M": "Vintage Bloom",
+    "NOJ002-S": "Floral Lemonade",
+    "NPJ009-S": "Violet Seashell"
+}
+
+# 用于动态更新的字典副本
+updated_sku_to_name = dict(sku_to_name)
 
 if uploaded_file:
     text = ""
@@ -16,55 +47,54 @@ if uploaded_file:
     for page in doc:
         text += page.get_text()
 
-    # 正确抓取 Item quantity（不是 Product quantity）
+    # 提取 Item quantity
     total_quantity_match = re.search(r"Item quantity[:：]?\s*(\d+)", text)
     expected_total = int(total_quantity_match.group(1)) if total_quantity_match else None
 
-    # 用两种方式提取数据：常规 + 紧凑型
-    pattern_multi = r"([A-Za-z’'’]+(?:\s+[A-Za-z’'’]+)+),\s*([SML])\s*\n([A-Z]{3}\d{3}-[SML])\s+(\d+)\s+([\d\s]+)"
-    pattern_inline = r"([A-Za-z’'’]+(?:\s+[A-Za-z’'’]+)+),\s*([SML])\s+([A-Z]{3}\d{3}-[SML])\s+(\d+)\s+([\d\s]+)"
-    matches = re.findall(pattern_multi, text) + re.findall(pattern_inline, text)
+    # 提取 SKU + 数量（只匹配含订单号的完整行）
+    pattern = r"([A-Z]{3}\d{3}-[SML])\s+(\d+)\s+\d{9,}"
+    matches = re.findall(pattern, text)
 
-    if matches:
-        sku_data = defaultdict(set)
+    sku_counts = defaultdict(int)
+    for sku, qty in matches:
+        sku_counts[sku] += int(qty)
 
-        for name, size, sku, qty, order_block in matches:
-            product_name = " ".join(name.strip().split()[:2])
-            order_ids = re.findall(r"\d{15,}", order_block)
-            for oid in order_ids:
-                sku_data[(product_name, size)].add(oid)
+    if sku_counts:
+        df = pd.DataFrame(list(sku_counts.items()), columns=["Seller SKU", "Qty"])
+        df["Product Name"] = df["Seller SKU"].apply(lambda x: updated_sku_to_name.get(x, "❓未识别"))
 
-        # 转为 DataFrame
-        summary_data = []
-        for (pname, size), order_ids in sku_data.items():
-            summary_data.append({
-                "Product Name": pname,
-                "Size": size,
-                "Qty": len(order_ids)
-            })
+        # 对于未知 SKU，让用户输入产品名
+        unknown_skus = df[df["Product Name"].str.startswith("❓")]["Seller SKU"].tolist()
+        if unknown_skus:
+            st.warning("⚠️ 有未识别的 SKU，请输入产品名称：")
+            for sku in unknown_skus:
+                name_input = st.text_input(f"🔧 SKU: {sku} 的产品名称是？", key=sku)
+                if name_input:
+                    updated_sku_to_name[sku] = name_input
+                    df.loc[df["Seller SKU"] == sku, "Product Name"] = name_input
 
-        df_summary = pd.DataFrame(summary_data)
-        df_summary["Size Order"] = df_summary["Size"].map({"S": 0, "M": 1, "L": 2})
-        df_summary = df_summary.sort_values(by=["Product Name", "Size Order"]).drop(columns=["Size Order"])
+        # 调整列顺序并排序
+        df = df[["Product Name", "Seller SKU", "Qty"]].sort_values(by="Product Name").reset_index(drop=True)
 
-        # 展示表格
-        st.success("✅ 提取成功并排序！")
-        st.dataframe(df_summary)
-
-        # 比对总数
-        total_qty = df_summary["Qty"].sum()
+        total_qty = df["Qty"].sum()
         st.subheader(f"📦 实际拣货总数量：{total_qty}")
-
-        if expected_total is not None:
+        if expected_total:
             if total_qty == expected_total:
-                st.success(f"✅ 与拣货单标注的总数一致！（{expected_total}）")
+                st.success(f"✅ 与拣货单标注数量一致！（{expected_total}）")
             else:
-                st.error(f"❌ 数量不一致！拣货单写的是 {expected_total}，实际提取为 {total_qty}")
+                st.error(f"❌ 数量不一致！拣货单为 {expected_total}，实际为 {total_qty}")
         else:
-            st.warning("⚠️ 未能识别 PDF 中的 Item quantity")
+            st.warning("⚠️ 未能识别 Item quantity")
 
-        # 下载按钮
-        csv = df_summary.to_csv(index=False).encode("utf-8-sig")
-        st.download_button("📥 下载汇总结果 CSV", data=csv, file_name="product_summary.csv", mime="text/csv")
+        st.dataframe(df)
+
+        # 下载数据汇总
+        csv = df.to_csv(index=False).encode("utf-8-sig")
+        st.download_button("📥 下载汇总结果 CSV", data=csv, file_name="product_summary_named.csv", mime="text/csv")
+
+        # 下载更新后的 SKU 映射表
+        sku_map_df = pd.DataFrame(list(updated_sku_to_name.items()), columns=["Seller SKU", "Product Name"])
+        map_csv = sku_map_df.to_csv(index=False).encode("utf-8-sig")
+        st.download_button("📁 下载 SKU 对照表（建议保存）", data=map_csv, file_name="sku_mapping.csv", mime="text/csv")
     else:
-        st.warning("⚠️ 没有成功匹配到任何产品数据，请检查 PDF 内容格式。")
+        st.warning("⚠️ 没有匹配到任何 SKU，请检查 PDF 格式")
