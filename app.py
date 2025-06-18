@@ -5,7 +5,7 @@ import fitz  # PyMuPDF
 from collections import defaultdict
 
 st.set_page_config(page_title="拣货单汇总工具", layout="centered")
-st.title("📦 NailVesta 拣货单汇总工具")
+st.title("ColorFour LLC 拣货单汇总工具")
 st.caption("提取 Seller SKU + 数量，并补全产品名")
 
 uploaded_file = st.file_uploader("📤 上传拣货 PDF", type=["pdf"])
