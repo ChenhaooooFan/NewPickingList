@@ -2,10 +2,11 @@ import streamlit as st
 import pandas as pd
 import re
 import fitz  # PyMuPDF
+from collections import defaultdict
 
 st.set_page_config(page_title="拣货单汇总工具", layout="centered")
 st.title("📦 NailVesta 拣货单产品名汇总工具")
-st.caption("提取商品名称 + 尺码 + 数量，并验证总数是否一致")
+st.caption("提取产品名称 + 尺码 + 数量（按订单去重），并验证总数是否一致")
 
 uploaded_file = st.file_uploader("请上传 PDF 拣货单文件", type=["pdf"])
 
@@ -15,32 +16,42 @@ if uploaded_file:
     for page in doc:
         text += page.get_text()
 
-    # 尝试从 PDF 中抓取总数（Product quantity: 32）
-    total_quantity_match = re.search(r"Product quantity:\s*(\d+)", text)
+    # 正确抓取 Item quantity（不是 Product quantity）
+    total_quantity_match = re.search(r"Item quantity[:：]?\s*(\d+)", text)
     expected_total = int(total_quantity_match.group(1)) if total_quantity_match else None
 
-    # 提取产品名 + 尺码 + SKU + 数量
-    pattern = r"([A-Za-z’'’]+(?:\s+[A-Za-z’'’]+)+),\s*([SML])\s*\n([A-Z]{3}\d{3}-[SML])\s+(\d+)"
-    matches = re.findall(pattern, text)
+    # 用两种方式提取数据：常规 + 紧凑型
+    pattern_multi = r"([A-Za-z’'’]+(?:\s+[A-Za-z’'’]+)+),\s*([SML])\s*\n([A-Z]{3}\d{3}-[SML])\s+(\d+)\s+([\d\s]+)"
+    pattern_inline = r"([A-Za-z’'’]+(?:\s+[A-Za-z’'’]+)+),\s*([SML])\s+([A-Z]{3}\d{3}-[SML])\s+(\d+)\s+([\d\s]+)"
+    matches = re.findall(pattern_multi, text) + re.findall(pattern_inline, text)
 
     if matches:
-        data = []
-        for name, size, sku, qty in matches:
-            product_name = " ".join(name.strip().split()[:2])  # 前两个词
-            data.append([product_name, size, int(qty)])
+        sku_data = defaultdict(set)
 
-        df = pd.DataFrame(data, columns=["Product Name", "Size", "Qty"])
-        df_summary = df.groupby(["Product Name", "Size"], as_index=False)["Qty"].sum()
+        for name, size, sku, qty, order_block in matches:
+            product_name = " ".join(name.strip().split()[:2])
+            order_ids = re.findall(r"\d{15,}", order_block)
+            for oid in order_ids:
+                sku_data[(product_name, size)].add(oid)
 
-        # 排序 S/M/L
-        size_order = {"S": 0, "M": 1, "L": 2}
-        df_summary["Size Sort"] = df_summary["Size"].map(size_order)
-        df_summary = df_summary.sort_values(by=["Product Name", "Size Sort"]).drop(columns=["Size Sort"])
+        # 转为 DataFrame
+        summary_data = []
+        for (pname, size), order_ids in sku_data.items():
+            summary_data.append({
+                "Product Name": pname,
+                "Size": size,
+                "Qty": len(order_ids)
+            })
 
-        st.success("✅ 提取成功并已排序！")
+        df_summary = pd.DataFrame(summary_data)
+        df_summary["Size Order"] = df_summary["Size"].map({"S": 0, "M": 1, "L": 2})
+        df_summary = df_summary.sort_values(by=["Product Name", "Size Order"]).drop(columns=["Size Order"])
+
+        # 展示表格
+        st.success("✅ 提取成功并排序！")
         st.dataframe(df_summary)
 
-        # 总数量
+        # 比对总数
         total_qty = df_summary["Qty"].sum()
         st.subheader(f"📦 实际拣货总数量：{total_qty}")
 
@@ -50,10 +61,10 @@ if uploaded_file:
             else:
                 st.error(f"❌ 数量不一致！拣货单写的是 {expected_total}，实际提取为 {total_qty}")
         else:
-            st.warning("⚠️ 无法识别拣货单标注的总数。")
+            st.warning("⚠️ 未能识别 PDF 中的 Item quantity")
 
         # 下载按钮
         csv = df_summary.to_csv(index=False).encode("utf-8-sig")
-        st.download_button("📥 下载为 CSV 文件", data=csv, file_name="product_summary_sorted.csv", mime="text/csv")
+        st.download_button("📥 下载汇总结果 CSV", data=csv, file_name="product_summary.csv", mime="text/csv")
     else:
-        st.warning("⚠️ 没有匹配到有效数据，请检查 PDF 格式是否正确。")
+        st.warning("⚠️ 没有成功匹配到任何产品数据，请检查 PDF 内容格式。")
