@@ -13,6 +13,7 @@ uploaded_file = st.file_uploader("📤 上传拣货 PDF", type=["pdf"])
 # ✅ 映射：SKU 前缀 → 产品名
 sku_prefix_to_name = {
     "NDF001": "Tropic Paradise",
+    "NPX014": "Afterglow",
     "NDX001": "Pinky Promise",
     "NHF001": "Gothic Moon",
     "NHX001": "Emerald Garden",
