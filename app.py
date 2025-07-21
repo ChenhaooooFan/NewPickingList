@@ -67,6 +67,9 @@ sku_prefix_to_name = {
     "NPX013": "Champagne Wishes",
     "NLX004": "Holiday Bunny",
     "NPJ010": "Glossy Doll",
+    "NPF013": "Opal Glaze",
+    "NOX002": "Cherry Kiss",
+    "NOJ004": "Peachy Coast",
     "NYJ001": "Rosy Ribbon"
 }
 
