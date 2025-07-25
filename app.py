@@ -71,6 +71,9 @@ sku_prefix_to_name = {
     "NOX002": "Cherry Kiss",
     "NOJ004": "Peachy Coast",
     "NYJ001": "Rosy Ribbon"
+    "NOF008": "Starlit Jungle"
+    "NOF006": "Coral Sea"
+    "NOF007": "Citrus Blush"
 }
 
 
