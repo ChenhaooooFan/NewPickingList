@@ -45,7 +45,7 @@ sku_prefix_to_name = {
     "NPF009": "Vintage Bloom",
     "NPF010": "Pastel Meadow",
     "NPF011": "Cherry Cheetah",
-    "NPF012": "Rosy Tigress",
+    "NPF012": "Rosey Tigress",
     "NPJ001": "SCARLET QUEEN",
     "NPJ003": "Stellar Capricorn",
     "NPJ004": "Midnight Violet",
