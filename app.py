@@ -74,6 +74,7 @@ sku_prefix_to_name = {
     "NOF008": "Starlit Jungle",
     "NOF006": "Coral Sea",
     "NOF009": "Rosé Angel",
+    "NPF014": "Arabian Nights",
     "NOF007": "Citrus Blush"
 }
 
