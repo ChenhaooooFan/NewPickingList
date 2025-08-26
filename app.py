@@ -84,7 +84,8 @@ sku_prefix_to_name = {
     "NOF010": "Spring Moss",
     "NM001": "Mystery Set",
     "NOF011": "Velvet Flame",
-    "NPJ011": "Bat Boo"
+    "NPJ011": "Bat Boo",
+    "NPX015": "Spooky Clown"
 
 }
 
