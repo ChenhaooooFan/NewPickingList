@@ -87,7 +87,8 @@ sku_prefix_to_name = {
     "NPJ011": "Bat Boo",
     "NOX004": "Azure Muse",
     "NPX016": "Silky Pearl",
-    "NPX015": "Spooky Clown"
+    "NPX015": "Spooky Clown",
+    "NOX005": "Honey Daisy"
 
 }
 
