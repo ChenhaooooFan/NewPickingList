@@ -88,7 +88,12 @@ sku_prefix_to_name = {
     "NOX004": "Azure Muse",
     "NPX016": "Silky Pearl",
     "NPX015": "Spooky Clown",
-    "NOX005": "Honey Daisy"
+    "NOX005": "Honey Daisy",
+    "NPJ012": "Gothic Mirage",
+    "NOX006": "Imperial Bloom",
+    "NPX017": "Rouge Letter",
+    "NOF013": "Sakura Blush",
+    "NPF018": "Wild Berry"
 
 }
 
