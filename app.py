@@ -93,7 +93,8 @@ sku_prefix_to_name = {
     "NOX006": "Imperial Bloom",
     "NPX017": "Rouge Letter",
     "NOF013": "Sakura Blush",
-    "NPF018": "Wild Berry"
+    "NPF018": "Wild Berry",
+    "NOF012": "Rose Nocturne"
 
 }
 
