@@ -98,7 +98,8 @@ sku_prefix_to_name = {
     "NIX001": "Golden Maple",
     "NOX007": "Stellar Whisper",
     "NOF014": "Desert Rose",
-    "NPF019": "Lunar Whisper"
+    "NPF019": "Lunar Whisper",
+    "NPJ003": "Stellar Capricorn"
 
 }
 
