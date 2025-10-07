@@ -103,10 +103,7 @@ sku_prefix_to_name = {
     "NOX009": "Moonlit Petal",
     "NOX008": "Espresso Petals",
     "NPX018": "Ruby Ribbon"
-
 }
-
-
 
 updated_mapping = dict(sku_prefix_to_name)
 
@@ -116,15 +113,38 @@ if uploaded_file:
     for page in doc:
         text += page.get_text()
 
+    # 读取拣货单总数（原逻辑保持）
     total_quantity_match = re.search(r"Item quantity[:：]?\s*(\d+)", text)
     expected_total = int(total_quantity_match.group(1)) if total_quantity_match else None
 
-    pattern = r"([A-Z]{3}\d{3}-[SML])\s+(\d+)\s+\d{9,}"
+    # —— 关键改动（兼容 Bundle）——
+    # 匹配单品：   ABC123-S
+    # 匹配 Bundle：ABC123DEF456-S   （两个 6 位 SKU 紧挨 + 统一尺码后缀）
+    # 仍然要求后面跟：数量 + 至少 9 位数字的订单/条码
+    pattern = r"([A-Z]{3}\d{3}(?:[A-Z]{3}\d{3})?-[SML])\s+(\d+)\s+\d{9,}"
     matches = re.findall(pattern, text)
 
     sku_counts = defaultdict(int)
-    for sku, qty in matches:
-        sku_counts[sku] += int(qty)
+
+    def expand_bundle_or_single(sku_with_size: str, qty: int):
+        """
+        输入形如 'NPJ011NPX005-S' 或 'NPX005-S'。
+        - 若为 Bundle：拆为 ['NPJ011-S', 'NPX005-S']，分别累计 qty
+        - 若为单品：直接累计 qty
+        """
+        code, size = sku_with_size.split("-")
+        # 单个 SKU 前缀长度固定为 6（3字母+3数字）
+        if len(code) == 12:  # 两个 SKU 拼接
+            sku1 = code[:6] + "-" + size
+            sku2 = code[6:] + "-" + size
+            sku_counts[sku1] += qty
+            sku_counts[sku2] += qty
+        else:
+            # 正常单品
+            sku_counts[sku_with_size] += qty
+
+    for raw_sku, qty in matches:
+        expand_bundle_or_single(raw_sku, int(qty))
 
     if sku_counts:
         df = pd.DataFrame(list(sku_counts.items()), columns=["Seller SKU", "Qty"])
@@ -132,7 +152,7 @@ if uploaded_file:
         df["Size"] = df["Seller SKU"].apply(lambda x: x.split("-")[1])
         df["Product Name"] = df["SKU Prefix"].apply(lambda x: updated_mapping.get(x, "❓未识别"))
 
-        # 用户手动补全
+        # 用户手动补全未知前缀（原逻辑保持）
         unknown = df[df["Product Name"].str.startswith("❓")]["SKU Prefix"].unique().tolist()
         if unknown:
             st.warning("⚠️ 有未识别的 SKU 前缀，请补全：")
@@ -142,6 +162,7 @@ if uploaded_file:
                     updated_mapping[prefix] = name_input
                     df.loc[df["SKU Prefix"] == prefix, "Product Name"] = name_input
 
+        # 列顺序与排序（原样保持）
         df = df[["Product Name", "Size", "Seller SKU", "Qty"]].sort_values(by=["Product Name", "Size"])
 
         total_qty = df["Qty"].sum()
@@ -157,11 +178,11 @@ if uploaded_file:
 
         st.dataframe(df)
 
-        # 下载结果
+        # 下载结果（文件名与编码保持不变）
         csv = df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 下载产品明细 CSV", data=csv, file_name="product_summary_named.csv", mime="text/csv")
 
-        # 下载 SKU 映射表
+        # 下载 SKU 映射表（文件名与编码保持不变）
         map_df = pd.DataFrame(list(updated_mapping.items()), columns=["SKU 前缀", "产品名称"])
         map_csv = map_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📁 下载 SKU 映射表 CSV", data=map_csv, file_name="sku_prefix_mapping.csv", mime="text/csv")
