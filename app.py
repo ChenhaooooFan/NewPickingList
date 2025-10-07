@@ -4,7 +4,7 @@ import re
 import fitz
 from collections import defaultdict
 
-st.set_page_config(page_title="拣货单汇总工具💗", layout="centered")
+st.set_page_config(page_title="拣货单汇总工具", layout="centered")
 st.title("📦 NailVesta 拣货单汇总工具")
 st.caption("提取 Seller SKU + 数量，并根据 SKU 前缀映射产品名称")
 
@@ -117,31 +117,43 @@ if uploaded_file:
     total_quantity_match = re.search(r"Item quantity[:：]?\s*(\d+)", text)
     expected_total = int(total_quantity_match.group(1)) if total_quantity_match else None
 
-    # —— 关键改动（兼容 Bundle）——
-    # 匹配单品：   ABC123-S
-    # 匹配 Bundle：ABC123DEF456-S   （两个 6 位 SKU 紧挨 + 统一尺码后缀）
-    # 仍然要求后面跟：数量 + 至少 9 位数字的订单/条码
-    pattern = r"([A-Z]{3}\d{3}(?:[A-Z]{3}\d{3})?-[SML])\s+(\d+)\s+\d{9,}"
+    # —— 升级：兼容 1–4 件 Bundle —— 
+    # 单品：      ABC123-S
+    # 2件 Bundle：ABC123DEF456-S
+    # 3件 Bundle：ABC123DEF456GHI789-S
+    # 4件 Bundle：ABC123DEF456GHI789JKL012-S
+    # 要求其后仍跟：数量 + 至少 9 位数字（订单/条码）
+    pattern = r"((?:[A-Z]{3}\d{3}){1,4}-[SML])\s+(\d+)\s+\d{9,}"
     matches = re.findall(pattern, text)
 
     sku_counts = defaultdict(int)
 
     def expand_bundle_or_single(sku_with_size: str, qty: int):
         """
-        输入形如 'NPJ011NPX005-S' 或 'NPX005-S'。
-        - 若为 Bundle：拆为 ['NPJ011-S', 'NPX005-S']，分别累计 qty
-        - 若为单品：直接累计 qty
+        输入例如：
+          - 'NPX005-S'（单品）
+          - 'NPJ011NPX005-S'（2件）
+          - 'NPJ011NPX005NPF001-S'（3件）
+          - 'NPJ011NPX005NPF001NOX003-S'（4件）
+        规则：按每 6 位（3字母+3数字）切片，长度在 6–24 时视为合法，逐一展开并分别累计相同数量。
+        否则回退为原样累计（保持宽容性）。
         """
-        code, size = sku_with_size.split("-")
-        # 单个 SKU 前缀长度固定为 6（3字母+3数字）
-        if len(code) == 12:  # 两个 SKU 拼接
-            sku1 = code[:6] + "-" + size
-            sku2 = code[6:] + "-" + size
-            sku_counts[sku1] += qty
-            sku_counts[sku2] += qty
-        else:
-            # 正常单品
+        if "-" not in sku_with_size:
             sku_counts[sku_with_size] += qty
+            return
+        code, size = sku_with_size.split("-", 1)
+        code = code.strip()
+        size = size.strip()
+
+        if len(code) % 6 == 0 and 6 <= len(code) <= 24:
+            parts = [code[i:i+6] for i in range(0, len(code), 6)]
+            if all(re.fullmatch(r"[A-Z]{3}\d{3}", p) for p in parts):
+                for p in parts:
+                    sku_counts[f"{p}-{size}"] += qty
+                return
+
+        # 回退：不满足规则则按原样累计
+        sku_counts[sku_with_size] += qty
 
     for raw_sku, qty in matches:
         expand_bundle_or_single(raw_sku, int(qty))
