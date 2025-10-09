@@ -4,7 +4,7 @@ import re
 import fitz
 from collections import defaultdict
 
-st.set_page_config(page_title="拣货单汇总工具💗", layout="centered")
+st.set_page_config(page_title="拣货单汇总工具", layout="centered")
 st.title("📦 NailVesta 拣货单汇总工具")
 st.caption("提取 Seller SKU + 数量，并根据 SKU 前缀映射产品名称")
 
@@ -104,7 +104,6 @@ sku_prefix_to_name = {
     "NOX008": "Espresso Petals",
     "NPX018": "Ruby Ribbon"
 }
-
 updated_mapping = dict(sku_prefix_to_name)
 
 # —— Bundle 拆分（1–4件），不合规则原样累计 —— #
@@ -122,12 +121,12 @@ def expand_bundle_or_single(sku_with_size: str, qty: int, counter: dict):
     counter[s] += qty  # 回退
 
 def _clean(t: str) -> str:
-    return (t.replace('\u00ad','')
-             .replace('\u200b','')
-             .replace('\u00a0',' ')
+    return (t.replace('\u00ad','')   # 软连字符
+             .replace('\u200b','')  # 零宽空格
+             .replace('\u00a0',' ') # NBSP
              .replace('–','-').replace('—','-'))
 
-# —— 兜底：词级解析（以 Qty 为锚点，把左侧 SKU 单元格先“纵后横” 拼接） —— #
+# —— 兜底：词级解析（Qty 1–3位短数字为锚点，拼接左侧SKU块，支持换行） —— #
 def parse_by_words_for_split_sku(doc) -> dict:
     out = defaultdict(int)
     for page in doc:
@@ -140,14 +139,14 @@ def parse_by_words_for_split_sku(doc) -> dict:
         heights = [y1-y0 for _,y0,_,y1,_,_,_,_ in words]
         line_h = (sum(heights)/len(heights)) if heights else 12
 
-        # 找全部 1–3 位短数字（Qty 候选），排除右侧的长订单号
+        # 所有 1–3 位短数字（可能是 Qty）
         qty_tokens = [(x0,y0,x1,y1,int(t.replace(',','')))
                       for x0,y0,x1,y1,t,_,_,_ in words
                       if re.fullmatch(r'\d{1,3}', t.replace(',',''))]
 
         for qx0,qy0,qx1,qy1,qty in qty_tokens:
             yc = (qy0+qy1)/2
-            # 聚合同一“行带”且在 Qty 左侧的词
+            # 同一“行带”且在 Qty 左侧的词 -> 先纵后横排序 -> 拼接
             cand = []
             for sx0,sy0,sx1,sy1,t,_,_,_ in words:
                 if sx0 < qx0:
@@ -156,7 +155,6 @@ def parse_by_words_for_split_sku(doc) -> dict:
                         cand.append((sy0, sx0, t))
             if not cand:
                 continue
-            # 先纵后横排序，拼接出左侧整块文本（能把 “NPJ011NPX01” + 换行 “5-M” 拼成 “NPJ011NPX015-M”）
             cand.sort(key=lambda k: (round(k[0],1), k[1]))
             left_text = re.sub(r'\s+', '', ''.join(t for _,_,t in cand))
 
@@ -177,7 +175,7 @@ if uploaded_file:
     total_quantity_match = re.search(r"Item quantity[:：]?\s*(\d+)", text)
     expected_total = int(total_quantity_match.group(1)) if total_quantity_match else None
 
-    # —— 升级：兼容 1–4 件 Bundle（快速路径：整段文本）——
+    # —— 快速路径：整段文本正则（列内未换行的行都会命中） —— 
     pattern = r"((?:[A-Z]{3}\d{3}){1,4}-[SML])\s+(\d+)\s+\d{9,}"
     matches = re.findall(pattern, text)
 
@@ -185,10 +183,11 @@ if uploaded_file:
     for raw_sku, qty in matches:
         expand_bundle_or_single(raw_sku, int(qty), sku_counts)
 
-    # —— 兜底路径：若快速路径抓不到/抓不全，改用词级解析，解决 SKU 被换行拆开的情况 —— #
-    if not sku_counts:
-        word_mode_counts = parse_by_words_for_split_sku(doc)
-        for k, v in word_mode_counts.items():
+    # —— 兜底：补齐被换行拆成两行的 Seller SKU —— #
+    word_mode_counts = parse_by_words_for_split_sku(doc)
+    # 只把“正则没抓到的 SKU”补进来，避免重复计数
+    for k, v in word_mode_counts.items():
+        if k not in sku_counts:
             sku_counts[k] += v
 
     if sku_counts:
