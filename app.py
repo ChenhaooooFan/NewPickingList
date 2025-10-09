@@ -107,6 +107,66 @@ sku_prefix_to_name = {
 
 updated_mapping = dict(sku_prefix_to_name)
 
+# —— Bundle 拆分（1–4件），不合规则原样累计 —— #
+def expand_bundle_or_single(sku_with_size: str, qty: int, counter: dict):
+    s = re.sub(r'\s+', '', sku_with_size).replace('–', '-').replace('—', '-')
+    if '-' not in s:
+        counter[s] += qty; return
+    code, size = s.split('-', 1)
+    if len(code) % 6 == 0 and 6 <= len(code) <= 24:
+        parts = [code[i:i+6] for i in range(0, len(code), 6)]
+        if all(re.fullmatch(r'[A-Z]{3}\d{3}', p or '') for p in parts):
+            for p in parts:
+                counter[f'{p}-{size}'] += qty
+            return
+    counter[s] += qty  # 回退
+
+def _clean(t: str) -> str:
+    return (t.replace('\u00ad','')
+             .replace('\u200b','')
+             .replace('\u00a0',' ')
+             .replace('–','-').replace('—','-'))
+
+# —— 兜底：词级解析（以 Qty 为锚点，把左侧 SKU 单元格先“纵后横” 拼接） —— #
+def parse_by_words_for_split_sku(doc) -> dict:
+    out = defaultdict(int)
+    for page in doc:
+        words = [(x0,y0,x1,y1,_clean(t),b,ln,sp)
+                 for (x0,y0,x1,y1,t,b,ln,sp) in page.get_text('words')
+                 if _clean(t).strip()]
+        if not words:
+            continue
+
+        heights = [y1-y0 for _,y0,_,y1,_,_,_,_ in words]
+        line_h = (sum(heights)/len(heights)) if heights else 12
+
+        # 找全部 1–3 位短数字（Qty 候选），排除右侧的长订单号
+        qty_tokens = [(x0,y0,x1,y1,int(t.replace(',','')))
+                      for x0,y0,x1,y1,t,_,_,_ in words
+                      if re.fullmatch(r'\d{1,3}', t.replace(',',''))]
+
+        for qx0,qy0,qx1,qy1,qty in qty_tokens:
+            yc = (qy0+qy1)/2
+            # 聚合同一“行带”且在 Qty 左侧的词
+            cand = []
+            for sx0,sy0,sx1,sy1,t,_,_,_ in words:
+                if sx0 < qx0:
+                    sc = (sy0+sy1)/2
+                    if abs(sc - yc) <= line_h*1.3:
+                        cand.append((sy0, sx0, t))
+            if not cand:
+                continue
+            # 先纵后横排序，拼接出左侧整块文本（能把 “NPJ011NPX01” + 换行 “5-M” 拼成 “NPJ011NPX015-M”）
+            cand.sort(key=lambda k: (round(k[0],1), k[1]))
+            left_text = re.sub(r'\s+', '', ''.join(t for _,_,t in cand))
+
+            m = re.search(r'(?:[A-Z]{3}\d{3}){1,4}-[A-Z]', left_text)
+            if not m:
+                continue
+            sku_text = m.group(0)
+            expand_bundle_or_single(sku_text, qty, out)
+    return out
+
 if uploaded_file:
     text = ""
     doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
@@ -117,46 +177,19 @@ if uploaded_file:
     total_quantity_match = re.search(r"Item quantity[:：]?\s*(\d+)", text)
     expected_total = int(total_quantity_match.group(1)) if total_quantity_match else None
 
-    # —— 升级：兼容 1–4 件 Bundle —— 
-    # 单品：      ABC123-S
-    # 2件 Bundle：ABC123DEF456-S
-    # 3件 Bundle：ABC123DEF456GHI789-S
-    # 4件 Bundle：ABC123DEF456GHI789JKL012-S
-    # 要求其后仍跟：数量 + 至少 9 位数字（订单/条码）
+    # —— 升级：兼容 1–4 件 Bundle（快速路径：整段文本）——
     pattern = r"((?:[A-Z]{3}\d{3}){1,4}-[SML])\s+(\d+)\s+\d{9,}"
     matches = re.findall(pattern, text)
 
     sku_counts = defaultdict(int)
-
-    def expand_bundle_or_single(sku_with_size: str, qty: int):
-        """
-        输入例如：
-          - 'NPX005-S'（单品）
-          - 'NPJ011NPX005-S'（2件）
-          - 'NPJ011NPX005NPF001-S'（3件）
-          - 'NPJ011NPX005NPF001NOX003-S'（4件）
-        规则：按每 6 位（3字母+3数字）切片，长度在 6–24 时视为合法，逐一展开并分别累计相同数量。
-        否则回退为原样累计（保持宽容性）。
-        """
-        if "-" not in sku_with_size:
-            sku_counts[sku_with_size] += qty
-            return
-        code, size = sku_with_size.split("-", 1)
-        code = code.strip()
-        size = size.strip()
-
-        if len(code) % 6 == 0 and 6 <= len(code) <= 24:
-            parts = [code[i:i+6] for i in range(0, len(code), 6)]
-            if all(re.fullmatch(r"[A-Z]{3}\d{3}", p) for p in parts):
-                for p in parts:
-                    sku_counts[f"{p}-{size}"] += qty
-                return
-
-        # 回退：不满足规则则按原样累计
-        sku_counts[sku_with_size] += qty
-
     for raw_sku, qty in matches:
-        expand_bundle_or_single(raw_sku, int(qty))
+        expand_bundle_or_single(raw_sku, int(qty), sku_counts)
+
+    # —— 兜底路径：若快速路径抓不到/抓不全，改用词级解析，解决 SKU 被换行拆开的情况 —— #
+    if not sku_counts:
+        word_mode_counts = parse_by_words_for_split_sku(doc)
+        for k, v in word_mode_counts.items():
+            sku_counts[k] += v
 
     if sku_counts:
         df = pd.DataFrame(list(sku_counts.items()), columns=["Seller SKU", "Qty"])
@@ -198,3 +231,7 @@ if uploaded_file:
         map_df = pd.DataFrame(list(updated_mapping.items()), columns=["SKU 前缀", "产品名称"])
         map_csv = map_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📁 下载 SKU 映射表 CSV", data=map_csv, file_name="sku_prefix_mapping.csv", mime="text/csv")
+    else:
+        st.error("未识别到任何 SKU 行（已启用拆行兜底解析仍未命中）。请确认 PDF 可复制文本，或发送样例以做专用适配。")
+        with st.expander("调试预览（前 800 字）"):
+            st.text(text[:800])
