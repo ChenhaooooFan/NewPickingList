@@ -184,4 +184,97 @@ def parse_table_like(doc) -> dict:
         page_width = page.rect.width
         def col_range(name):
             idx = [i for i,(_,n) in enumerate(header_positions) if n==name][0]
-            left = header
+            left = header_positions[idx][0] - 5
+            right = (header_positions[idx+1][0] - 5) if idx+1 < len(header_positions) else page_width
+            return left, right
+        sku_xmin, sku_xmax = col_range('seller_sku')
+        qty_xmin, qty_xmax = col_range('qty')
+
+        # 3) 以“数量词”为锚点：在同一行附近聚合该列的 Seller SKU 单元格（可跨两行）
+        #   - 先估计一行高度
+        heights = [y1 - y0 for _,y0,_,y1,_,_,_,_ in words]
+        line_h = (sum(heights)/len(heights)) if heights else 10
+        #   - 找所有 qty 纯数字词
+        qty_words = []
+        for x0,y0,x1,y1,t,b,ln,sp in words:
+            if qty_xmin <= x0 <= qty_xmax and re.fullmatch(r'\d+', t.replace(',', '')):
+                qty_words.append((x0,y0,x1,y1,int(t.replace(',',''))))
+        #   - 对每个 qty，去同一水平附近的 seller_sku 列聚合所有词并拼接
+        for x0,y0,x1,y1,qty in qty_words:
+            yc = (y0 + y1)/2
+            sku_parts = []
+            for sx0,sy0,sx1,sy1,t,b,ln,sp in words:
+                if sku_xmin <= sx0 <= sku_xmax:
+                    sc = (sy0 + sy1)/2
+                    if abs(sc - yc) <= line_h * 1.2:  # 容忍换行的同一“行块”
+                        sku_parts.append((sx0, t))
+            sku_parts = [t for _,t in sorted(sku_parts, key=lambda k: k[0])]
+            if not sku_parts:
+                continue
+            sku_cell = ''.join(sku_parts)              # 直接拼接，处理 NPJ011NPX01 + 5-M
+            sku_cell = re.sub(r'\s+', '', sku_cell)
+            # 只接受形如 (ABC123){1,4}-[SML] 的单元格
+            if re.fullmatch(r'(?:[A-Z]{3}\d{3}){1,4}-[A-Z]', sku_cell):
+                expand_bundle(sku_counts, sku_cell, qty)
+
+    return sku_counts
+
+if uploaded_file:
+    # 打开 PDF
+    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+
+    # 读取拣货单总数（保持你的原逻辑）
+    all_text = ""
+    for p in doc:
+        all_text += p.get_text()
+    m = re.search(r"Item quantity[:：]?\s*(\d+)", all_text)
+    expected_total = int(m.group(1)) if m else None
+
+    # 表格版解析
+    sku_counts = parse_table_like(doc)
+
+    if not sku_counts:
+        st.error("未识别到任何 SKU 行（表格列解析也未命中）。请把样例 PDF 发我做一次专用适配，或导出为可复制文本的 PDF。")
+        with st.expander("调试预览（前 800 字）"):
+            st.text(all_text[:800])
+        st.stop()
+
+    # —— 后续与原版保持一致 —— #
+    df = pd.DataFrame(list(sku_counts.items()), columns=["Seller SKU", "Qty"])
+    df["SKU Prefix"] = df["Seller SKU"].apply(lambda x: x.split("-")[0])
+    df["Size"] = df["Seller SKU"].apply(lambda x: x.split("-")[1])
+    df["Product Name"] = df["SKU Prefix"].apply(lambda x: updated_mapping.get(x, "❓未识别"))
+
+    # 未识别前缀可手动补充（不变）
+    unknown = df[df["Product Name"].str.startswith("❓")]["SKU Prefix"].unique().tolist()
+    if unknown:
+        st.warning("⚠️ 有未识别的 SKU 前缀，请补全：")
+        for prefix in unknown:
+            name_input = st.text_input(f"🔧 SKU 前缀 {prefix} 的产品名称：", key=prefix)
+            if name_input:
+                updated_mapping[prefix] = name_input
+                df.loc[df["SKU Prefix"] == prefix, "Product Name"] = name_input
+
+    # 列顺序与排序（不变）
+    df = df[["Product Name", "Size", "Seller SKU", "Qty"]].sort_values(by=["Product Name", "Size"])
+
+    total_qty = df["Qty"].sum()
+    st.subheader(f"📦 实际拣货总数量：{total_qty}")
+
+    if expected_total:
+        if total_qty == expected_total:
+            st.success(f"✅ 与拣货单一致！（{expected_total}）")
+        else:
+            st.error(f"❌ 数量不一致！拣货单为 {expected_total}，实际为 {total_qty}")
+    else:
+        st.warning("⚠️ 未能识别 Item quantity")
+
+    st.dataframe(df)
+
+    # 下载结果（文件名与编码不变）
+    csv = df.to_csv(index=False).encode("utf-8-sig")
+    st.download_button("📥 下载产品明细 CSV", data=csv, file_name="product_summary_named.csv", mime="text/csv")
+
+    map_df = pd.DataFrame(list(updated_mapping.items()), columns=["SKU 前缀", "产品名称"])
+    map_csv = map_df.to_csv(index=False).encode("utf-8-sig")
+    st.download_button("📁 下载 SKU 映射表 CSV", data=map_csv, file_name="sku_prefix_mapping.csv", mime="text/csv")
