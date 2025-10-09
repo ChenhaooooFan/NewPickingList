@@ -10,7 +10,7 @@ st.caption("提取 Seller SKU + 数量，并根据 SKU 前缀映射产品名称"
 
 uploaded_file = st.file_uploader("📤 上传拣货 PDF", type=["pdf"])
 
-# ✅ 映射：SKU 前缀 → 产品名（不变）
+# ✅ 映射：SKU 前缀 → 产品名（保持不变）
 sku_prefix_to_name = {
     "NDF001": "Tropic Paradise",
     "NPX014": "Afterglow",
@@ -106,7 +106,7 @@ sku_prefix_to_name = {
 }
 updated_mapping = dict(sku_prefix_to_name)
 
-# —— Bundle 拆分：支持 1–4 件；不合规则原样累计 —— #
+# —— Bundle 拆分（1–4件），不合规则原样累计 —— #
 def expand_bundle(counter: dict, sku_with_size: str, qty: int):
     s = re.sub(r'\s+', '', sku_with_size).replace('–', '-').replace('—', '-')
     if '-' not in s:
@@ -120,137 +120,105 @@ def expand_bundle(counter: dict, sku_with_size: str, qty: int):
             return
     counter[s] += qty  # 回退
 
-def _norm_token(t: str) -> str:
-    """规范化表头单词，便于匹配 qty / order / seller / sku。"""
-    return re.sub(r'[^a-z]', '', t.lower())
+def _norm(t: str) -> str:
+    return (t.replace('\u00ad','').replace('\u200b','').replace('\u00a0',' ')
+              .replace('–','-').replace('—','-'))
 
-# —— 按“列”解析（修正：明确分出 Order ID 列，Qty 列不再覆盖到它） —— #
+# —— 解析：按列定位 + “先纵后横”拼接 Seller SKU（修复 NPX01 / 5-M 被拆） —— #
 def parse_table_like(doc) -> dict:
     sku_counts = defaultdict(int)
 
     for page in doc:
-        words = page.get_text('words')  # (x0, y0, x1, y1, text, block, line, span)
-
-        # 规范化文本
-        cleaned = []
-        for x0, y0, x1, y1, t, b, ln, sp in words:
-            t = (t.replace('\u00ad', '')     # 软连字符
-                   .replace('\u200b', '')    # 零宽空格
-                   .replace('\u00a0', ' ')   # NBSP -> 空格
-                   .replace('–', '-')
-                   .replace('—', '-'))
-            if t.strip():
-                cleaned.append((x0, y0, x1, y1, t, b, ln, sp))
-        words = cleaned
+        words = [(x0,y0,x1,y1,_norm(t),b,ln,sp) for (x0,y0,x1,y1,t,b,ln,sp) in page.get_text('words') if _norm(t).strip()]
         if not words:
             continue
 
-        # 1) 找包含 Seller SKU / Qty(/Quantity) / Order ID 的表头行
-        header_map = {}
-        row_groups = {}
-        for x0,y0,x1,y1,t,b,ln,sp in words:
-            row_groups.setdefault((b,ln), []).append((x0,t))
-        header_key = None
-        for key, items in row_groups.items():
-            tokens = [_norm_token(t) for _,t in items]
-            if ('seller' in tokens and 'sku' in tokens) and (('qty' in tokens) or ('quantity' in tokens)):
-                header_key = key
-                # 记录各关键单词的最左 x0
-                for x,t in items:
-                    tt = _norm_token(t)
-                    header_map.setdefault(tt, []).append(x)
-                break
-        if header_key is None:
-            # 兜底：用视觉最靠上的一行
-            header_key = min(row_groups.keys(), key=lambda k: k[1])
-            for x,t in row_groups[header_key]:
-                tt = _norm_token(t)
-                header_map.setdefault(tt, []).append(x)
-
-        # 2) 计算三列的 x 起点
-        col_x = {}
-        if 'seller' in header_map:
-            col_x['seller_sku'] = min(header_map['seller'])
-        if 'qty' in header_map:
-            col_x['qty'] = min(header_map['qty'])
-        elif 'quantity' in header_map:
-            col_x['qty'] = min(header_map['quantity'])
-        # “Order ID” 可能分成两个词
-        if 'order' in header_map:
-            col_x['order_id'] = min(header_map['order'])
-        if 'orderid' in header_map:  # 万一合在一起
-            col_x['order_id'] = min(col_x.get('order_id', 1e9), min(header_map['orderid']))
-
-        # 必须至少有 seller_sku & qty
-        if 'seller_sku' not in col_x or 'qty' not in col_x:
-            continue
-
-        # 3) 按列起点算列范围（用“下一个列起点的中点”为右边界）
-        page_w = page.rect.width
-        positions = sorted([(col_x['seller_sku'], 'seller_sku'),
-                            (col_x['qty'], 'qty')] + ([(col_x['order_id'], 'order_id')] if 'order_id' in col_x else []),
-                           key=lambda x: x[0])
-
-        def col_range(name):
-            idx = [i for i,(_,n) in enumerate(positions) if n==name][0]
-            left = positions[idx][0] - 4
-            right = positions[idx+1][0] - 4 if idx+1 < len(positions) else page_w
-            return left, right
-
-        sku_xmin, sku_xmax = col_range('seller_sku')
-        qty_xmin, qty_xmax = col_range('qty')
-        # 如果存在 Order ID 列，Qty 右边界就会在它的左侧；否则保持到页面右缘
-
-        # 4) 行高估计 + 锚点数量词（仅允许短数字，避免把 Order ID 当数量）
+        # 行高估计
         heights = [y1-y0 for _,y0,_,y1,_,_,_,_ in words]
         line_h = (sum(heights)/len(heights)) if heights else 12
 
+        # 1) 找表头行并确定 Seller SKU / Qty / Order ID 列的 x 起点
+        row_groups = {}
+        for x0,y0,x1,y1,t,b,ln,sp in words:
+            row_groups.setdefault((b,ln), []).append((x0,t))
+        header_key, col_x = None, {}
+
+        for key, items in row_groups.items():
+            tokens = [re.sub(r'[^a-z]','', t.lower()) for _,t in items]
+            if ('seller' in tokens and 'sku' in tokens) and (('qty' in tokens) or ('quantity' in tokens)):
+                header_key = key
+                for x,t in items:
+                    k = re.sub(r'[^a-z]','', t.lower())
+                    col_x.setdefault(k, []).append(x)
+                break
+
+        if header_key is None:
+            # 没读到表头就跳过这一页
+            continue
+
+        x_sku = min(col_x.get('seller', [None]))  # “seller” 一词的起点
+        x_qty = min(col_x.get('qty', col_x.get('quantity', [None])))
+        x_order = min(col_x.get('order', [1e9]))  # 没有就给很大的数
+        if x_sku is None or x_qty is None:
+            continue
+
+        # 列范围（到下一个列起点的左侧）
+        page_w = page.rect.width
+        def rng(x_left, x_next):
+            left = x_left - 4
+            right = (x_next - 4) if x_next is not None else page_w
+            return left, right
+        sku_xmin, sku_xmax = rng(x_sku, min(x_qty, x_order))
+        qty_xmin, qty_xmax = rng(x_qty, x_order if x_order != 1e9 else None)
+
+        # 2) 把“数量短数字”当锚点（避免把订单号识别成数量）
         qty_words = []
         for x0,y0,x1,y1,t,b,ln,sp in words:
-            if qty_xmin <= x0 <= qty_xmax:
-                val = t.replace(',', '')
-                if re.fullmatch(r'\d{1,3}', val):  # 最多3位，排除长订单号
-                    qty_words.append((x0,y0,x1,y1,int(val)))
+            if qty_xmin <= x0 <= qty_xmax and re.fullmatch(r'\d{1,3}', t.replace(',','')):
+                qty_words.append((x0,y0,x1,y1,int(t.replace(',',''))))
 
-        # 5) 对每个数量词，聚合同一“行带”的 Seller SKU 单元格词并拼接
+        # 3) 对每个数量锚点，聚合同一“行带”的 Seller SKU 词并拼接
         for x0,y0,x1,y1,qty in qty_words:
             yc = (y0 + y1) / 2
-            sku_parts = []
+
+            # 先纵（y 从小到大），再横（x 从小到大）排序，确保跨行的“5-M”能接在前面的 NPX01 后面
+            candidates = []
             for sx0,sy0,sx1,sy1,t,b,ln,sp in words:
                 if sku_xmin <= sx0 <= sku_xmax:
                     sc = (sy0 + sy1) / 2
-                    if abs(sc - yc) <= line_h * 1.2:  # 容忍换行
-                        sku_parts.append((sx0, t))
-            if not sku_parts:
+                    if abs(sc - yc) <= line_h * 1.3:
+                        candidates.append((sy0, sx0, t))
+            if not candidates:
                 continue
-            sku_cell = ''.join(t for _,t in sorted(sku_parts, key=lambda k: k[0]))
-            sku_cell = re.sub(r'\s+', '', sku_cell)
+
+            candidates.sort(key=lambda k: (round(k[0], 1), k[1]))
+            sku_cell = ''.join(t for _,_,t in candidates)
+            sku_cell = re.sub(r'\s+', '', sku_cell)  # 去内部空白，例如 “NPJ011NPX01”+“5-M”
+
+            # 只接受像 (ABC123){1,4}-[A-Z] 的形式
             if re.fullmatch(r'(?:[A-Z]{3}\d{3}){1,4}-[A-Z]', sku_cell):
                 expand_bundle(sku_counts, sku_cell, qty)
 
     return sku_counts
 
 if uploaded_file:
-    # 打开 PDF
     doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
 
-    # 读取拣货单总数（保持你的原逻辑）
-    all_text = ""
-    for p in doc:
-        all_text += p.get_text()
+    # 总数（保持你的原逻辑）
+    all_text = "".join(p.get_text() for p in doc)
     m = re.search(r"Item quantity[:：]?\s*(\d+)", all_text)
     expected_total = int(m.group(1)) if m else None
 
-    # 表格版解析（修正后的）
+    # 表格解析（含“先纵后横”SKU 组装）
     sku_counts = parse_table_like(doc)
 
     if not sku_counts:
-        st.error("未识别到任何 SKU 行（表格列解析未命中）。请把样例 PDF 发我做一次专用适配，或导出为可复制文本的 PDF。")
+        st.error("未识别到任何 SKU 行。请确认 PDF 为可复制文本；若仍异常，把样例发我做一次专用适配。")
         with st.expander("调试预览（前 800 字）"):
             st.text(all_text[:800])
         st.stop()
 
-    # —— 后续输出与导出：保持不变 —— #
+    # —— 后续展示与导出（不变） —— #
     df = pd.DataFrame(list(sku_counts.items()), columns=["Seller SKU", "Qty"])
     df["SKU Prefix"] = df["Seller SKU"].apply(lambda x: x.split("-")[0])
     df["Size"] = df["Seller SKU"].apply(lambda x: x.split("-")[1])
@@ -280,7 +248,6 @@ if uploaded_file:
 
     st.dataframe(df)
 
-    # 下载结果（文件名与编码不变）
     csv = df.to_csv(index=False).encode("utf-8-sig")
     st.download_button("📥 下载产品明细 CSV", data=csv, file_name="product_summary_named.csv", mime="text/csv")
 
