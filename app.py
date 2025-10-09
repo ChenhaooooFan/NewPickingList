@@ -10,7 +10,7 @@ st.caption("提取 Seller SKU + 数量，并根据 SKU 前缀映射产品名称"
 
 uploaded_file = st.file_uploader("📤 上传拣货 PDF", type=["pdf"])
 
-# ✅ 映射：SKU 前缀 → 产品名
+# ✅ 映射：SKU 前缀 → 产品名（保持不变）
 sku_prefix_to_name = {
     "NDF001": "Tropic Paradise",
     "NPX014": "Afterglow",
@@ -107,65 +107,110 @@ sku_prefix_to_name = {
 
 updated_mapping = dict(sku_prefix_to_name)
 
-if uploaded_file:
-    text = ""
-    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+# ——— 辅助：Bundle 拆分（1–4件），不合规则原样累计 ———
+def add_sku_expanded(counter: dict, sku_with_size: str, qty: int):
+    sku = re.sub(r'\s+', '', sku_with_size)               # 去内部空白
+    sku = sku.replace('–', '-').replace('—', '-')         # 统一破折号
+    if '-' not in sku:
+        counter[sku] += qty
+        return
+    code, size = sku.split('-', 1)
+    if len(code) % 6 == 0 and 6 <= len(code) <= 24:
+        parts = [code[i:i+6] for i in range(0, len(code), 6)]
+        if all(re.fullmatch(r'[A-Z]{3}\d{3}', p) for p in parts):
+            for p in parts:
+                counter[f'{p}-{size}'] += qty
+            return
+    counter[sku] += qty  # 回退
+
+# ——— 词级兜底解析：同一行内拼接相邻词识别 SKU，并向右找数量 ———
+def parse_by_words(doc) -> dict:
+    sku_counts = defaultdict(int)
     for page in doc:
-        text += page.get_text()
+        words = page.get_text('words')  # (x0, y0, x1, y1, "word", block_no, line_no, span_no)
+        # 按行分组
+        lines = defaultdict(list)
+        for (x0, y0, x1, y1, w, b, ln, sp) in words:
+            # 统一一些怪空白
+            w = w.replace('\u00ad', '').replace('\u200b', '').replace('\u00a0', ' ')
+            w = w.replace('–', '-').replace('—', '-')
+            if w.strip():
+                lines[(b, ln)].append((x0, w))
+        # 每行处理
+        for key in sorted(lines.keys()):
+            line_words = [w for _, w in sorted(lines[key], key=lambda t: t[0])]
+            # 滑动窗口：相邻 1~3 词拼接试成 SKU
+            n = len(line_words)
+            i = 0
+            while i < n:
+                found = False
+                for win in (3, 2, 1):
+                    if i + win > n:
+                        continue
+                    cand = ''.join(line_words[i:i+win])
+                    cand_clean = re.sub(r'\s+', '', cand)
+                    cand_clean = cand_clean.replace('–', '-').replace('—', '-')
+                    if re.fullmatch(r'(?:[A-Z]{3}\d{3}){1,4}-[SML]', cand_clean):
+                        # 向右找第一个纯数字词作为数量
+                        qty = None
+                        j = i + win
+                        while j < n:
+                            wj = line_words[j].replace(',', '')
+                            if re.fullmatch(r'\d+', wj):
+                                qty = int(wj)
+                                break
+                            j += 1
+                        if qty is not None:
+                            add_sku_expanded(sku_counts, cand_clean, qty)
+                            i = j + 1
+                            found = True
+                        break
+                if not found:
+                    i += 1
+    return sku_counts
 
-    # —— 1) 文本规范化 —— #
-    # a) 粘合字母/数字之间的换行（NPJ011NPX01\n5-M -> NPJ011NPX015-M）
-    text = re.sub(r'(?<=[A-Z0-9])\r?\n(?=[A-Z0-9])', '', text)
-    # b) 清理隐形/特殊空格与软连字符
-    text = (text
-            .replace('\u00ad', '')   # 软连字符
-            .replace('\u200b', '')   # 零宽空格
-            .replace('\u00a0', ' ')  # NBSP
-           )
-    # c) 把其他非常见空白统一成普通空格，避免 \s 匹配不到
-    text = re.sub(r'[\u2000-\u200A\u202F\u205F\u3000]', ' ', text)
+if uploaded_file:
+    # 读取 PDF 原文
+    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
 
-    # 读取拣货单总数（原逻辑保持）
+    # 读取整段文本用于“快速路径”
+    raw_text = ""
+    for page in doc:
+        raw_text += page.get_text()
+
+    # —— 文本规范化：粘合/清理/统一 —— #
+    text = raw_text
+    text = re.sub(r'(?<=[A-Z0-9])\r?\n(?=[A-Z0-9])', '', text)   # 粘合字母数字间换行
+    text = (text.replace('\u00ad', '')        # 软连字符
+                 .replace('\u200b', '')       # 零宽空格
+                 .replace('\u00a0', ' ')      # NBSP
+                 .replace('–', '-')
+                 .replace('—', '-'))
+    text = re.sub(r'[\u2000-\u200A\u202F\u205F\u3000]', ' ', text)  # 统一稀有空白
+
+    # 读取拣货单总数（保持原逻辑）
     total_quantity_match = re.search(r"Item quantity[:：]?\s*(\d+)", text)
     expected_total = int(total_quantity_match.group(1)) if total_quantity_match else None
 
-    # —— 2) 正则：严格→宽松双通道 —— #
-    strict_pat = r"((?:[A-Z]{3}\s*\d\s*\d\s*\d){1,4}\s*-\s*[SML])\s+(\d+)\s+\d{9,}"
-    loose_pat  = r"((?:[A-Z]{3}\s*\d\s*\d\s*\d){1,4}\s*-\s*[SML])\s+(\d+)(?:\s+\d{7,})?"
-
-    matches = re.findall(strict_pat, text)
-    if not matches:
-        matches = re.findall(loose_pat, text)
+    # —— 快速路径：整段文本匹配（能命中就用） —— #
+    fast_pat = r"((?:[A-Z]{3}\s*\d\s*\d\s*\d){1,4}\s*-\s*[SML])\s+(\d+)(?:\s+\d{7,})?"
+    matches = re.findall(fast_pat, text)
 
     sku_counts = defaultdict(int)
-
-    def expand_bundle_or_single(sku_with_size: str, qty: int):
-        """1–4 件 bundle 拆分；不满足规则则原样累计。"""
-        sku_with_size = re.sub(r'\s+', '', sku_with_size)  # 清掉内部空白，确保 NPJ011NPX015-M
-        if "-" not in sku_with_size:
-            sku_counts[sku_with_size] += qty
-            return
-        code, size = sku_with_size.split("-", 1)
-        code = code.strip(); size = size.strip()
-
-        if len(code) % 6 == 0 and 6 <= len(code) <= 24:
-            parts = [code[i:i+6] for i in range(0, len(code), 6)]
-            if all(re.fullmatch(r"[A-Z]{3}\d{3}", p) for p in parts):
-                for p in parts:
-                    sku_counts[f"{p}-{size}"] += qty
-                return
-        sku_counts[sku_with_size] += qty  # 回退
-
     for raw_sku, qty in matches:
-        expand_bundle_or_single(raw_sku, int(qty))
+        add_sku_expanded(sku_counts, raw_sku, int(qty))
+
+    # —— 兜底：若快速路径没抓全/抓不到，启用“词级解析” —— #
+    if not sku_counts:
+        sku_counts = parse_by_words(doc)
 
     if not sku_counts:
-        st.error("未识别到任何 SKU 行。已尝试粘合换行与宽松匹配，但仍未命中。\n建议：上传可复制文本的原始 PDF，或把该文件发我做一次专用适配。")
+        st.error("未识别到任何 SKU 行。\n已尝试：\n- 粘合跨行/清理特殊空白\n- 文本级与词级双路径解析\n\n仍未命中，可能是整页为图片或版式与规则差异较大。\n建议：提供可复制文本的 PDF，或把样例发我做一次专用适配。")
         with st.expander("调试预览（前 800 字）"):
             st.text(text[:800])
         st.stop()
 
-    # —— 3) 后续保持不变 —— #
+    # —— 后续与原来一致 —— #
     df = pd.DataFrame(list(sku_counts.items()), columns=["Seller SKU", "Qty"])
     df["SKU Prefix"] = df["Seller SKU"].apply(lambda x: x.split("-")[0])
     df["Size"] = df["Seller SKU"].apply(lambda x: x.split("-")[1])
@@ -195,7 +240,7 @@ if uploaded_file:
 
     st.dataframe(df)
 
-    # 下载结果
+    # 下载结果（文件名/编码保持不变）
     csv = df.to_csv(index=False).encode("utf-8-sig")
     st.download_button("📥 下载产品明细 CSV", data=csv, file_name="product_summary_named.csv", mime="text/csv")
 
