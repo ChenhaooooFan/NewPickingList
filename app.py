@@ -182,43 +182,63 @@ def parse_by_order_anchor(doc, pages_to_skip=None):
 
     return expanded, raw_total
 
-# ====== C 路径：宽松正则（无坐标，最后兜底） ======
+# ====== C 路径：宽松正则（无坐标，最后兜底；修复“重复计数/错抓数量”） ======
 def parse_by_loose_regex(doc):
     """
-    不依赖坐标。逐页取 text 流，按行分割，在“同行/后一行/两行内”寻找：
+    不依赖坐标。逐页取 text 流，按行分割，在 3 行窗口内寻找：
       - SKU: (ABC123){1..4}-[SML]
-      - Qty: 1..3 位数字
-      - Order: ≥9 位数字（没有也允许，但对账口径只加有 Qty 的）
+      - QTY: 取“SKU 之后”的第一个 1..3 位数字
+      - ORDER: ≥9 位数字（可选，仅作辅助判断，不强制）
+    去重：
+      - (i, sku, qty) 级别去重；
+      - last_index_by_sku：同一 SKU 若在相邻窗口（i 与 i+1）重复出现，则只记一次。
     """
     expanded = defaultdict(int)
     raw_total = 0
+
     for page in doc:
         txt = _clean(page.get_text("text"))
+        # 如果连文本都拿不到，直接跳过（扫描版）
+        if not txt or not txt.strip():
+            continue
+
         lines = [l.strip() for l in txt.splitlines() if l.strip()]
         n = len(lines)
-        for i, line in enumerate(lines):
-            # 把断行合并一点（当前行 + 下一行）供匹配
-            cat = re.sub(r'\s+', ' ', (line + ' ' + (lines[i+1] if i+1<n else '')))
-            msku = re.search(r'((?:[A-Z]{3}\d{3}){1,4}-[SML])', cat)
-            if not msku:
-                continue
-            sku = msku.group(1)
+        seen = set()
+        last_index_by_sku = {}
 
-            # 在本行及后 2 行里找 Qty（尽量靠近 SKU 后面）
+        for i in range(n):
             window = ' '.join(lines[i:i+3])
-            qtys = re.findall(r'\b(\d{1,3})\b', window)
-            qty = None
-            if qtys:
-                # 过滤掉明显是年份/天数的异常值（>500 基本不是数量）
-                cand = [int(x) for x in qtys if 1 <= int(x) <= 500]
-                if cand:
-                    qty = cand[0]
-
-            if qty is None:
+            if not window:
                 continue
+            window = re.sub(r'\s+', ' ', window)
 
-            raw_total += qty
-            expand_bundle(expanded, sku, qty)
+            # 在窗口中查 SKU（可能有 1~多个，逐一处理）
+            for msku in SKU_FULL.finditer(window):
+                sku = msku.group(0)
+                # 防相邻窗口重复（i 与 i-1）
+                if sku in last_index_by_sku and i - last_index_by_sku[sku] <= 1:
+                    continue
+
+                after = window[msku.end():]
+
+                # 先找订单号（可选，不强制）
+                _ = re.search(r'\b\d{9,}\b', after)
+
+                # 只取“SKU 之后”的第一个数量
+                mq = re.search(r'\b([1-9]\d{0,2})\b', after)
+                if not mq:
+                    continue
+                qty = int(mq.group(1))
+
+                key = (i, sku, qty)
+                if key in seen:
+                    continue
+                seen.add(key)
+                last_index_by_sku[sku] = i
+
+                raw_total += qty
+                expand_bundle(expanded, sku, qty)
 
     return expanded, raw_total
 
@@ -242,7 +262,7 @@ if uploaded_file:
         sku_counts[k] += v
     raw_total = raw1 + raw2
 
-    # —— 如果 A+B 完全抓不到任何行，启用 C（宽松模式）——
+    # —— 若 A+B 为空，再启用 C（宽松模式，已修复重复/错抓）——
     used_loose = False
     if not sku_counts:
         exp3, raw3 = parse_by_loose_regex(doc)
@@ -260,7 +280,6 @@ if uploaded_file:
         pieces_total = int(df["Qty"].sum())
         st.subheader(f"📦 实际拣货总数量：{pieces_total}")
 
-        # 对账提示
         tag = "（宽松模式）" if used_loose else ""
         if expected_total is not None:
             if raw_total == expected_total:
@@ -272,7 +291,6 @@ if uploaded_file:
 
         st.dataframe(df, use_container_width=True)
 
-        # 下载（与原来保持一致）
         csv = df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 下载产品明细 CSV", data=csv, file_name="product_summary_named.csv", mime="text/csv")
 
