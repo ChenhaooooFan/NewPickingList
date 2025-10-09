@@ -4,7 +4,7 @@ import re
 import fitz
 from collections import defaultdict
 
-st.set_page_config(page_title="拣货单汇总工具💗", layout="centered")
+st.set_page_config(page_title="拣货单汇总工具", layout="centered")
 st.title("📦 NailVesta 拣货单汇总工具")
 st.caption("提取 Seller SKU + 数量，并根据 SKU 前缀映射产品名称")
 
@@ -113,44 +113,36 @@ if uploaded_file:
     for page in doc:
         text += page.get_text()
 
-    # ① 读取拣货单总数（原逻辑保持）
+    # ——— 预处理：修复被拆开的 SKU & 清理隐形字符 ———
+    # 把被硬换行拆开的连续字母/数字粘合，例如 NPJ011NPX01\n5-M -> NPJ011NPX015-M
+    text = re.sub(r'(?<=[A-Z0-9])\r?\n(?=[A-Z0-9])', '', text)
+    # 清理软连字符、零宽空格
+    text = text.replace('\u00ad', '').replace('\u200b', '')
+
+    # 读取拣货单总数（原逻辑保持）
     total_quantity_match = re.search(r"Item quantity[:：]?\s*(\d+)", text)
     expected_total = int(total_quantity_match.group(1)) if total_quantity_match else None
 
-    # ② 预处理：把被硬换行拆开的 **字母/数字之间** 的换行粘合起来
-    #    例如：NPJ011NPX01\n5-M  ->  NPJ011NPX015-M
-    text = re.sub(r'(?<=[A-Z0-9])\n(?=[A-Z0-9])', '', text)
+    # ——— 正则：先严格匹配（要求后面有 9+ 位条码），若无结果再走宽松匹配 ———
+    strict_pat = r"((?:[A-Z]{3}\s*\d\s*\d\s*\d){1,4}\s*-\s*[SML])\s+(\d+)\s+\d{9,}"
+    loose_pat  = r"((?:[A-Z]{3}\s*\d\s*\d\s*\d){1,4}\s*-\s*[SML])\s+(\d+)(?:\s+\d{7,})?"
 
-    # ③ 升级正则：兼容 1–4 件 Bundle，且允许片段内有空白（更稳健）
-    #    单品：      ABC123-S
-    #    2件 Bundle：ABC123DEF456-S
-    #    3件 Bundle：ABC123DEF456GHI789-S
-    #    4件 Bundle：ABC123DEF456GHI789JKL012-S
-    #    其后仍需：数量 + 至少 9 位数字（订单/条码）
-    pattern = r"((?:[A-Z]{3}\s*\d\s*\d\s*\d){1,4}\s*-\s*[SML])\s+(\d+)\s+\d{9,}"
-    matches = re.findall(pattern, text)
+    matches = re.findall(strict_pat, text)
+    if not matches:
+        matches = re.findall(loose_pat, text)
 
     sku_counts = defaultdict(int)
 
     def expand_bundle_or_single(sku_with_size: str, qty: int):
         """
-        输入例如：
-          - 'NPX005-S'（单品）
-          - 'NPJ011NPX005-S'（2件）
-          - 'NPJ011NPX005NPF001-S'（3件）
-          - 'NPJ011NPX005NPF001NOX003-S'（4件）
-        规则：按每 6 位（3字母+3数字）切片，长度在 6–24 时视为合法，逐一展开并分别累计相同数量。
-        否则回退为原样累计（保持宽容性）。
+        1–4件 Bundle 拆分；不满足规则则原样累计。
         """
-        # 去除内部空白，确保形如 NPJ011NPX015-M
-        sku_with_size = re.sub(r'\s+', '', sku_with_size)
-
+        sku_with_size = re.sub(r'\s+', '', sku_with_size)  # 去掉内部空白
         if "-" not in sku_with_size:
             sku_counts[sku_with_size] += qty
             return
         code, size = sku_with_size.split("-", 1)
-        code = code.strip()
-        size = size.strip()
+        code = code.strip(); size = size.strip()
 
         if len(code) % 6 == 0 and 6 <= len(code) <= 24:
             parts = [code[i:i+6] for i in range(0, len(code), 6)]
@@ -158,53 +150,52 @@ if uploaded_file:
                 for p in parts:
                     sku_counts[f"{p}-{size}"] += qty
                 return
+        sku_counts[sku_with_size] += qty  # 回退
 
-        # 回退：不满足规则则按原样累计
-        sku_counts[sku_with_size] += qty
-
-    # ④ 计数：送入拆分器（会自动把 bundle 拆成单品计数）
     for raw_sku, qty in matches:
-        # 先把匹配到的原始 SKU 去空白，再扩展
-        clean_sku = re.sub(r'\s+', '', raw_sku)
-        expand_bundle_or_single(clean_sku, int(qty))
+        expand_bundle_or_single(raw_sku, int(qty))
 
-    if sku_counts:
-        df = pd.DataFrame(list(sku_counts.items()), columns=["Seller SKU", "Qty"])
-        df["SKU Prefix"] = df["Seller SKU"].apply(lambda x: x.split("-")[0])
-        df["Size"] = df["Seller SKU"].apply(lambda x: x.split("-")[1])
-        df["Product Name"] = df["SKU Prefix"].apply(lambda x: updated_mapping.get(x, "❓未识别"))
+    if not sku_counts:
+        st.error("未识别到任何 SKU 行。可能原因：\n- PDF 是图片扫描、文字不可选\n- 单据里没有条码/长数字，或格式与现有规则不一致\n- SKU/数量被非常规换行拆分\n\n建议：尝试上传原始可复制文本的 PDF，或把该 PDF 发我做一次适配。")
+        with st.expander("调试预览（前 600 字）"):
+            st.text(text[:600])
+        st.stop()
 
-        # 用户手动补全未知前缀（原逻辑保持）
-        unknown = df[df["Product Name"].str.startswith("❓")]["SKU Prefix"].unique().tolist()
-        if unknown:
-            st.warning("⚠️ 有未识别的 SKU 前缀，请补全：")
-            for prefix in unknown:
-                name_input = st.text_input(f"🔧 SKU 前缀 {prefix} 的产品名称：", key=prefix)
-                if name_input:
-                    updated_mapping[prefix] = name_input
-                    df.loc[df["SKU Prefix"] == prefix, "Product Name"] = name_input
+    # ——— 后续保持不变 ———
+    df = pd.DataFrame(list(sku_counts.items()), columns=["Seller SKU", "Qty"])
+    df["SKU Prefix"] = df["Seller SKU"].apply(lambda x: x.split("-")[0])
+    df["Size"] = df["Seller SKU"].apply(lambda x: x.split("-")[1])
+    df["Product Name"] = df["SKU Prefix"].apply(lambda x: updated_mapping.get(x, "❓未识别"))
 
-        # 列顺序与排序（原样保持）
-        df = df[["Product Name", "Size", "Seller SKU", "Qty"]].sort_values(by=["Product Name", "Size"])
+    # 用户手动补全未知前缀
+    unknown = df[df["Product Name"].str.startswith("❓")]["SKU Prefix"].unique().tolist()
+    if unknown:
+        st.warning("⚠️ 有未识别的 SKU 前缀，请补全：")
+        for prefix in unknown:
+            name_input = st.text_input(f"🔧 SKU 前缀 {prefix} 的产品名称：", key=prefix)
+            if name_input:
+                updated_mapping[prefix] = name_input
+                df.loc[df["SKU Prefix"] == prefix, "Product Name"] = name_input
 
-        total_qty = df["Qty"].sum()
-        st.subheader(f"📦 实际拣货总数量：{total_qty}")
+    df = df[["Product Name", "Size", "Seller SKU", "Qty"]].sort_values(by=["Product Name", "Size"])
 
-        if expected_total:
-            if total_qty == expected_total:
-                st.success(f"✅ 与拣货单一致！（{expected_total}）")
-            else:
-                st.error(f"❌ 数量不一致！拣货单为 {expected_total}，实际为 {total_qty}")
+    total_qty = df["Qty"].sum()
+    st.subheader(f"📦 实际拣货总数量：{total_qty}")
+
+    if expected_total:
+        if total_qty == expected_total:
+            st.success(f"✅ 与拣货单一致！（{expected_total}）")
         else:
-            st.warning("⚠️ 未能识别 Item quantity")
+            st.error(f"❌ 数量不一致！拣货单为 {expected_total}，实际为 {total_qty}")
+    else:
+        st.warning("⚠️ 未能识别 Item quantity")
 
-        st.dataframe(df)
+    st.dataframe(df)
 
-        # 下载结果（文件名与编码保持不变）
-        csv = df.to_csv(index=False).encode("utf-8-sig")
-        st.download_button("📥 下载产品明细 CSV", data=csv, file_name="product_summary_named.csv", mime="text/csv")
+    # 下载结果
+    csv = df.to_csv(index=False).encode("utf-8-sig")
+    st.download_button("📥 下载产品明细 CSV", data=csv, file_name="product_summary_named.csv", mime="text/csv")
 
-        # 下载 SKU 映射表（文件名与编码保持不变）
-        map_df = pd.DataFrame(list(updated_mapping.items()), columns=["SKU 前缀", "产品名称"])
-        map_csv = map_df.to_csv(index=False).encode("utf-8-sig")
-        st.download_button("📁 下载 SKU 映射表 CSV", data=map_csv, file_name="sku_prefix_mapping.csv", mime="text/csv")
+    map_df = pd.DataFrame(list(updated_mapping.items()), columns=["SKU 前缀", "产品名称"])
+    map_csv = map_df.to_csv(index=False).encode("utf-8-sig")
+    st.download_button("📁 下载 SKU 映射表 CSV", data=map_csv, file_name="sku_prefix_mapping.csv", mime="text/csv")
