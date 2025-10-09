@@ -4,8 +4,8 @@ import re
 import fitz
 from collections import defaultdict
 
-st.set_page_config(page_title="拣货单汇总工具", layout="centered")
-st.title("📦 NailVesta 拣货单汇总工具💗")
+st.set_page_config(page_title="拣货单汇总工具(´∀｀)♡", layout="centered")
+st.title("NailVesta 拣货单汇总工具💗")
 st.caption("提取 Seller SKU + 数量，并根据 SKU 前缀映射产品名称（支持 1–4 件 bundle；修复换行把最后一位数字折行到下一行的情况）")
 
 uploaded_file = st.file_uploader("📤 上传拣货 PDF", type=["pdf"])
