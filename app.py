@@ -6,7 +6,7 @@ from collections import defaultdict
 
 st.set_page_config(page_title="拣货单汇总工具", layout="centered")
 st.title("📦 NailVesta 拣货单汇总工具")
-st.caption("提取 Seller SKU + 数量，并根据 SKU 前缀映射产品名称（bundle 展开统计 + 对账口径分开）")
+st.caption("提取 Seller SKU + 数量，并根据 SKU 前缀映射产品名称（bundle 展开统计 + 对账口径分开 + 宽松兜底）")
 
 uploaded_file = st.file_uploader("📤 上传拣货 PDF", type=["pdf"])
 
@@ -34,17 +34,18 @@ sku_prefix_to_name = {
 }
 updated_mapping = dict(sku_prefix_to_name)
 
-# ========= 工具 =========
+# ========= 正则 & 工具 =========
 ALNUM_HYPHEN = re.compile(r'[A-Z0-9-]+$')
-SKU_FULL      = re.compile(r'(?:[A-Z]{3}\d{3}){1,4}-[A-Z]')
-QTY_NUM       = re.compile(r'^\d{1,3}$')
-ORDER_ID      = re.compile(r'^\d{9,}$')
+SKU_FULL      = re.compile(r'(?:[A-Z]{3}\d{3}){1,4}-[A-Z]')   # 1–4 件 bundle
+QTY_NUM       = re.compile(r'^\d{1,3}$')                      # 1–3 位数量
+ORDER_ID      = re.compile(r'^\d{9,}$')                       # ≥9 位订单号
 
 def _clean(t: str) -> str:
     return (t.replace('\u00ad','').replace('\u200b','').replace('\u00a0',' ')
               .replace('–','-').replace('—','-'))
 
 def expand_bundle(counter: dict, sku_with_size: str, qty: int):
+    """将 1–4 件 bundle 拆分为独立 SKU（按 6 位切片）。"""
     s = re.sub(r'\s+','', sku_with_size).replace('–','-').replace('—','-')
     if '-' not in s:
         counter[s] += qty; return
@@ -55,9 +56,10 @@ def expand_bundle(counter: dict, sku_with_size: str, qty: int):
             for p in parts:
                 counter[f'{p}-{size}'] += qty
             return
+    # 回退：不满足规则则按原样计
     counter[s] += qty
 
-# ====== 表头解析（同页去重） ======
+# ====== A 路径：表头解析（同页去重） ======
 def parse_by_headers(doc):
     expanded = defaultdict(int)
     raw_total = 0
@@ -69,7 +71,7 @@ def parse_by_headers(doc):
             continue
         heights = [y1-y0 for _,y0,_,y1,_ in words]
         line_h  = (sum(heights)/len(heights)) if heights else 12
-        band    = line_h * 3.0
+        band    = line_h * 3.0  # 放宽容差，适配单元格内换行
 
         header_words = { re.sub(r'[^a-z]','', t.lower()): x0 for x0,_,_,_,t in words if t and t.isprintable() }
         def get_x(*keys):
@@ -108,6 +110,7 @@ def parse_by_headers(doc):
                     tokens.append((sy0, sx0, t))
             if not tokens:
                 continue
+
             tokens.sort(key=lambda k: (round(k[0],1), k[1]))
             cat = re.sub(r'\s+','', ''.join(t for _,_,t in tokens))
             m = SKU_FULL.search(cat)
@@ -125,7 +128,7 @@ def parse_by_headers(doc):
 
     return expanded, raw_total, pages_with_header
 
-# ====== 锚点兜底（跳过已表头的页面；同页去重） ======
+# ====== B 路径：OrderID 锚点兜底（跳过已表头页面；同页去重） ======
 def parse_by_order_anchor(doc, pages_to_skip=None):
     if pages_to_skip is None:
         pages_to_skip = set()
@@ -161,6 +164,7 @@ def parse_by_order_anchor(doc, pages_to_skip=None):
                     tokens.append((sy0, sx0, t))
             if not tokens:
                 continue
+
             tokens.sort(key=lambda k: (round(k[0],1), k[1]))
             cat = re.sub(r'\s+','', ''.join(t for _,_,t in tokens))
             m = SKU_FULL.search(cat)
@@ -178,6 +182,46 @@ def parse_by_order_anchor(doc, pages_to_skip=None):
 
     return expanded, raw_total
 
+# ====== C 路径：宽松正则（无坐标，最后兜底） ======
+def parse_by_loose_regex(doc):
+    """
+    不依赖坐标。逐页取 text 流，按行分割，在“同行/后一行/两行内”寻找：
+      - SKU: (ABC123){1..4}-[SML]
+      - Qty: 1..3 位数字
+      - Order: ≥9 位数字（没有也允许，但对账口径只加有 Qty 的）
+    """
+    expanded = defaultdict(int)
+    raw_total = 0
+    for page in doc:
+        txt = _clean(page.get_text("text"))
+        lines = [l.strip() for l in txt.splitlines() if l.strip()]
+        n = len(lines)
+        for i, line in enumerate(lines):
+            # 把断行合并一点（当前行 + 下一行）供匹配
+            cat = re.sub(r'\s+', ' ', (line + ' ' + (lines[i+1] if i+1<n else '')))
+            msku = re.search(r'((?:[A-Z]{3}\d{3}){1,4}-[SML])', cat)
+            if not msku:
+                continue
+            sku = msku.group(1)
+
+            # 在本行及后 2 行里找 Qty（尽量靠近 SKU 后面）
+            window = ' '.join(lines[i:i+3])
+            qtys = re.findall(r'\b(\d{1,3})\b', window)
+            qty = None
+            if qtys:
+                # 过滤掉明显是年份/天数的异常值（>500 基本不是数量）
+                cand = [int(x) for x in qtys if 1 <= int(x) <= 500]
+                if cand:
+                    qty = cand[0]
+
+            if qty is None:
+                continue
+
+            raw_total += qty
+            expand_bundle(expanded, sku, qty)
+
+    return expanded, raw_total
+
 # ========= 主流程 =========
 if uploaded_file:
     raw = uploaded_file.read()
@@ -188,17 +232,23 @@ if uploaded_file:
     m_total = re.search(r"Item quantity[:：]?\s*(\d+)", all_text)
     expected_total = int(m_total.group(1)) if m_total else None
 
-    # 两条路径分别跑
+    # A + B
     exp1, raw1, pages_with_header = parse_by_headers(doc)
     exp2, raw2 = parse_by_order_anchor(doc, pages_to_skip=pages_with_header)
 
-    # ✅ 修正点 1：展开计数用“累加”而不是只补不存在的键
+    # 合并（累加）
     sku_counts = exp1.copy()
     for k, v in exp2.items():
         sku_counts[k] += v
-
-    # ✅ 修正点 2：对账口径应为两条路径的“总和”，不是二选一
     raw_total = raw1 + raw2
+
+    # —— 如果 A+B 完全抓不到任何行，启用 C（宽松模式）——
+    used_loose = False
+    if not sku_counts:
+        exp3, raw3 = parse_by_loose_regex(doc)
+        sku_counts = exp3
+        raw_total = raw3
+        used_loose = True
 
     if sku_counts:
         df = pd.DataFrame(list(sku_counts.items()), columns=["Seller SKU", "Qty"])
@@ -210,16 +260,19 @@ if uploaded_file:
         pieces_total = int(df["Qty"].sum())
         st.subheader(f"📦 实际拣货总数量：{pieces_total}")
 
+        # 对账提示
+        tag = "（宽松模式）" if used_loose else ""
         if expected_total is not None:
             if raw_total == expected_total:
-                st.success(f"🧾 对账口径（按行）：{raw_total}  ✅ 与拣货单一致")
+                st.success(f"🧾 对账口径（按行）{tag}：{raw_total}  ✅ 与拣货单一致")
             else:
-                st.error(f"🧾 对账口径（按行）：{raw_total}  ❌ 与拣货单 {expected_total} 不一致")
+                st.error(f"🧾 对账口径（按行）{tag}：{raw_total}  ❌ 与拣货单 {expected_total} 不一致")
         else:
-            st.warning("⚠️ 未能识别拣货单的 Item quantity（对账口径无法比对）")
+            st.warning(f"⚠️ 未能识别拣货单的 Item quantity；当前口径{tag}无法比对")
 
         st.dataframe(df, use_container_width=True)
 
+        # 下载（与原来保持一致）
         csv = df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 下载产品明细 CSV", data=csv, file_name="product_summary_named.csv", mime="text/csv")
 
@@ -227,6 +280,6 @@ if uploaded_file:
         map_csv = map_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📁 下载 SKU 映射表 CSV", data=map_csv, file_name="sku_prefix_mapping.csv", mime="text/csv")
     else:
-        st.error("未识别到任何 SKU 行。请确认 PDF 为可复制文本或发我样例做一次适配。")
+        st.error("未识别到任何 SKU 行（A/B/C 三种模式均未命中，疑似扫描版或版式过于异常）。")
         with st.expander("调试预览（前 800 字）"):
             st.text(all_text[:800])
