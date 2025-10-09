@@ -126,9 +126,10 @@ def _clean(t: str) -> str:
              .replace('\u00a0',' ') # NBSP
              .replace('–','-').replace('—','-'))
 
-# —— 兜底：词级解析（Qty 1–3位短数字为锚点，拼接左侧SKU块，支持换行） —— #
-def parse_by_words_for_split_sku(doc) -> dict:
+# —— 兜底：用 Order ID（≥9位数字）锚点定位每一行，再向左找 Qty（1–3位），再拼接 Seller SKU —— #
+def parse_by_order_anchor(doc) -> dict:
     out = defaultdict(int)
+    SKU_WINDOW = 320  # 从 Qty 向左回看窗口宽度（像素）
     for page in doc:
         words = [(x0,y0,x1,y1,_clean(t),b,ln,sp)
                  for (x0,y0,x1,y1,t,b,ln,sp) in page.get_text('words')
@@ -136,29 +137,40 @@ def parse_by_words_for_split_sku(doc) -> dict:
         if not words:
             continue
 
+        # 行高估计
         heights = [y1-y0 for _,y0,_,y1,_,_,_,_ in words]
         line_h = (sum(heights)/len(heights)) if heights else 12
+        band = line_h * 1.3
 
-        # 所有 1–3 位短数字（可能是 Qty）
-        qty_tokens = [(x0,y0,x1,y1,int(t.replace(',','')))
-                      for x0,y0,x1,y1,t,_,_,_ in words
-                      if re.fullmatch(r'\d{1,3}', t.replace(',',''))]
+        # 订单号锚点
+        anchors = [(x0,y0,x1,y1,t) for x0,y0,x1,y1,t,_,_,_ in words
+                   if re.fullmatch(r'\d{9,}', t.replace(',', ''))]
 
-        for qx0,qy0,qx1,qy1,qty in qty_tokens:
-            yc = (qy0+qy1)/2
-            # 同一“行带”且在 Qty 左侧的词 -> 先纵后横排序 -> 拼接
+        for ax0,ay0,ax1,ay1,oid in anchors:
+            yc = (ay0+ay1)/2
+
+            # Qty：锚点左侧，同一行带内，取“最靠右”的 1–3 位短数字
+            qty_cands = []
+            for x0,y0,x1,y1,t,_,_,_ in words:
+                if x0 < ax0 and re.fullmatch(r'\d{1,3}', t.replace(',','')):
+                    if abs(((y0+y1)/2) - yc) <= band:
+                        qty_cands.append((x0,int(t.replace(',',''))))
+            if not qty_cands:
+                continue
+            qx0, qty = max(qty_cands, key=lambda k: k[0])  # 最靠右
+
+            # Seller SKU：在 Qty 左侧一个窗口内，同一行带；先纵后横拼接
             cand = []
-            for sx0,sy0,sx1,sy1,t,_,_,_ in words:
-                if sx0 < qx0:
-                    sc = (sy0+sy1)/2
-                    if abs(sc - yc) <= line_h*1.3:
-                        cand.append((sy0, sx0, t))
+            left_bound = qx0 - SKU_WINDOW
+            for x0,y0,x1,y1,t,_,_,_ in words:
+                if left_bound <= x0 < qx0 and abs(((y0+y1)/2) - yc) <= band:
+                    cand.append((y0, x0, t))
             if not cand:
                 continue
             cand.sort(key=lambda k: (round(k[0],1), k[1]))
-            left_text = re.sub(r'\s+', '', ''.join(t for _,_,t in cand))
+            cell = re.sub(r'\s+', '', ''.join(t for _,_,t in cand))
 
-            m = re.search(r'(?:[A-Z]{3}\d{3}){1,4}-[A-Z]', left_text)
+            m = re.search(r'(?:[A-Z]{3}\d{3}){1,4}-[A-Z]', cell)
             if not m:
                 continue
             sku_text = m.group(0)
@@ -183,10 +195,10 @@ if uploaded_file:
     for raw_sku, qty in matches:
         expand_bundle_or_single(raw_sku, int(qty), sku_counts)
 
-    # —— 兜底：补齐被换行拆成两行的 Seller SKU —— #
-    word_mode_counts = parse_by_words_for_split_sku(doc)
-    # 只把“正则没抓到的 SKU”补进来，避免重复计数
-    for k, v in word_mode_counts.items():
+    # —— 兜底：针对被拆行的 Seller SKU（如：NPJ011NPX01 + 下一行 5-M） —— #
+    anchor_counts = parse_by_order_anchor(doc)
+    # 只补充“快速路径未识别到”的 SKU，避免重复
+    for k, v in anchor_counts.items():
         if k not in sku_counts:
             sku_counts[k] += v
 
@@ -231,6 +243,6 @@ if uploaded_file:
         map_csv = map_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📁 下载 SKU 映射表 CSV", data=map_csv, file_name="sku_prefix_mapping.csv", mime="text/csv")
     else:
-        st.error("未识别到任何 SKU 行（已启用拆行兜底解析仍未命中）。请确认 PDF 可复制文本，或发送样例以做专用适配。")
+        st.error("未识别到任何 SKU 行（已启用 Order ID 锚点兜底仍未命中）。请确认 PDF 为可复制文本。")
         with st.expander("调试预览（前 800 字）"):
             st.text(text[:800])
