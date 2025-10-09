@@ -10,7 +10,7 @@ st.caption("提取 Seller SKU + 数量，并根据 SKU 前缀映射产品名称�
 
 uploaded_file = st.file_uploader("📤 上传拣货 PDF", type=["pdf"])
 
-# ========= 映射：SKU 前缀 → 产品名（保持你之前的数据） =========
+# ========= 映射：SKU 前缀 → 产品名 =========
 sku_prefix_to_name = {
     "NDF001":"Tropic Paradise","NPX014":"Afterglow","NDX001":"Pinky Promise","NHF001":"Gothic Moon","NHX001":"Emerald Garden",
     "NLF001":"Divine Emblem","NLF002":"Athena's Glow","NLJ001":"Golden Pearl","NLJ002":"BAROQUE BLISS","NLJ003":"Rainbow Reef",
@@ -34,18 +34,17 @@ sku_prefix_to_name = {
 }
 updated_mapping = dict(sku_prefix_to_name)
 
-# ========= 小工具 =========
-ALNUM_HYPHEN = re.compile(r'[A-Z0-9-]+$')                   # 只保留大写/数字/连字符的 token
-SKU_FULL      = re.compile(r'(?:[A-Z]{3}\d{3}){1,4}-[A-Z]') # 1–4 件 bundle 形态
-QTY_NUM       = re.compile(r'^\d{1,3}$')                    # 1–3 位数量
-ORDER_ID      = re.compile(r'^\d{9,}$')                     # ≥9 位订单号
+# ========= 工具 =========
+ALNUM_HYPHEN = re.compile(r'[A-Z0-9-]+$')
+SKU_FULL      = re.compile(r'(?:[A-Z]{3}\d{3}){1,4}-[A-Z]')
+QTY_NUM       = re.compile(r'^\d{1,3}$')
+ORDER_ID      = re.compile(r'^\d{9,}$')
 
 def _clean(t: str) -> str:
     return (t.replace('\u00ad','').replace('\u200b','').replace('\u00a0',' ')
               .replace('–','-').replace('—','-'))
 
 def expand_bundle(counter: dict, sku_with_size: str, qty: int):
-    """将 1–4 件 bundle 拆分为独立 SKU（按 6 位切片）。"""
     s = re.sub(r'\s+','', sku_with_size).replace('–','-').replace('—','-')
     if '-' not in s:
         counter[s] += qty; return
@@ -56,10 +55,9 @@ def expand_bundle(counter: dict, sku_with_size: str, qty: int):
             for p in parts:
                 counter[f'{p}-{size}'] += qty
             return
-    # 回退：不满足规则则按原样计
     counter[s] += qty
 
-# ====== 路径1：表头解析（每页只跑一次；同页去重） ======
+# ====== 表头解析（同页去重） ======
 def parse_by_headers(doc):
     expanded = defaultdict(int)
     raw_total = 0
@@ -69,13 +67,11 @@ def parse_by_headers(doc):
         words = [(x0,y0,x1,y1,_clean(t)) for (x0,y0,x1,y1,t,_,_,_) in page.get_text('words')]
         if not words:
             continue
-
         heights = [y1-y0 for _,y0,_,y1,_ in words]
         line_h  = (sum(heights)/len(heights)) if heights else 12
-        band    = line_h * 3.0  # 容差放宽：可覆盖单元格内换行
+        band    = line_h * 3.0
 
         header_words = { re.sub(r'[^a-z]','', t.lower()): x0 for x0,_,_,_,t in words if t and t.isprintable() }
-
         def get_x(*keys):
             xs = [header_words[k] for k in keys if k in header_words]
             return min(xs) if xs else None
@@ -83,12 +79,10 @@ def parse_by_headers(doc):
         x_sku = get_x('sellersku','sku','seller')
         x_qty = get_x('qty','quantity')
         x_ord = get_x('orderid','order')
-
         if x_sku is None or x_qty is None:
             continue
 
         pages_with_header.add(pi)
-
         page_w = page.rect.width
         def col_range(left, nxt):
             left = left - 4
@@ -98,9 +92,7 @@ def parse_by_headers(doc):
         sku_l, sku_r = col_range(x_sku, [x_qty, x_ord])
         qty_l, qty_r = col_range(x_qty, [x_ord])
 
-        # 本页去重：同一行被多次渲染（或 Qty 出现两个短数字）只计一次
         seen = set()
-
         qtys = []
         for x0,y0,x1,y1,t in words:
             if qty_l <= x0 <= qty_r and QTY_NUM.match(t.strip()):
@@ -116,7 +108,6 @@ def parse_by_headers(doc):
                     tokens.append((sy0, sx0, t))
             if not tokens:
                 continue
-
             tokens.sort(key=lambda k: (round(k[0],1), k[1]))
             cat = re.sub(r'\s+','', ''.join(t for _,_,t in tokens))
             m = SKU_FULL.search(cat)
@@ -124,21 +115,20 @@ def parse_by_headers(doc):
                 continue
 
             seller_sku = m.group(0)
-            key = (round(yc, 1), round(qx0, 1), seller_sku, qty)  # 去重键
+            key = (round(yc, 1), round(qx0, 1), seller_sku, qty)
             if key in seen:
                 continue
             seen.add(key)
 
-            raw_total += qty                  # 按行计数（对账口径）
-            expand_bundle(expanded, seller_sku, qty)  # 展开计数（明细）
+            raw_total += qty
+            expand_bundle(expanded, seller_sku, qty)
 
     return expanded, raw_total, pages_with_header
 
-# ====== 路径2：OrderID 锚点兜底（跳过已表头解析的页面；同页去重） ======
+# ====== 锚点兜底（跳过已表头的页面；同页去重） ======
 def parse_by_order_anchor(doc, pages_to_skip=None):
     if pages_to_skip is None:
         pages_to_skip = set()
-
     expanded = defaultdict(int)
     raw_total = 0
 
@@ -149,20 +139,16 @@ def parse_by_order_anchor(doc, pages_to_skip=None):
         words = [(x0,y0,x1,y1,_clean(t)) for (x0,y0,x1,y1,t,_,_,_) in page.get_text('words')]
         if not words:
             continue
-
         heights = [y1-y0 for _,y0,_,y1,_ in words]
         line_h  = (sum(heights)/len(heights)) if heights else 12
         band    = line_h * 3.0
 
-        # 粗估 SKU 列左界（没有表头也能跑）
         sku_left_guess = min([x0 for x0,_,_,_,t in words if 'sku' in t.lower()], default=page.rect.width*0.2)
-
         anchors = [(x0,y0,x1,y1,t) for x0,y0,x1,y1,t in words if ORDER_ID.match(t)]
-        seen = set()  # 本页去重
+        seen = set()
 
         for ax0,ay0,ax1,ay1,_ in anchors:
             yc = (ay0+ay1)/2
-            # 找“最靠右”的 1–3 位数字作为 Qty（在锚点左侧、同一行带）
             qty_cands = [(x0,int(t)) for x0,y0,_,y1,t in words
                          if (x0 < ax0) and QTY_NUM.match(t) and abs(((y0+y1)/2)-yc) <= band]
             if not qty_cands:
@@ -175,7 +161,6 @@ def parse_by_order_anchor(doc, pages_to_skip=None):
                     tokens.append((sy0, sx0, t))
             if not tokens:
                 continue
-
             tokens.sort(key=lambda k: (round(k[0],1), k[1]))
             cat = re.sub(r'\s+','', ''.join(t for _,_,t in tokens))
             m = SKU_FULL.search(cat)
@@ -198,37 +183,33 @@ if uploaded_file:
     raw = uploaded_file.read()
     doc = fitz.open(stream=raw, filetype="pdf")
 
-    # 读取 Item quantity（用于与拣货单对账）
+    # Item quantity（对账用）
     all_text = "".join(p.get_text() for p in doc)
     m_total = re.search(r"Item quantity[:：]?\s*(\d+)", all_text)
     expected_total = int(m_total.group(1)) if m_total else None
 
-    # 先用表头解析，再用锚点兜底（仅在“没有表头的页面”上跑）
+    # 两条路径分别跑
     exp1, raw1, pages_with_header = parse_by_headers(doc)
     exp2, raw2 = parse_by_order_anchor(doc, pages_to_skip=pages_with_header)
 
-    # 合并展开计数：以表头为主，兜底只补“表头没抓到”的键
+    # ✅ 修正点 1：展开计数用“累加”而不是只补不存在的键
     sku_counts = exp1.copy()
     for k, v in exp2.items():
-        if k not in sku_counts:
-            sku_counts[k] = v
+        sku_counts[k] += v
 
-    # 按行对账口径：优先表头结果，否则用兜底
-    raw_total = raw1 if raw1 > 0 else raw2
+    # ✅ 修正点 2：对账口径应为两条路径的“总和”，不是二选一
+    raw_total = raw1 + raw2
 
     if sku_counts:
-        # ===== 明细（展开后） =====
         df = pd.DataFrame(list(sku_counts.items()), columns=["Seller SKU", "Qty"])
-        df["SKU Prefix"]  = df["Seller SKU"].str.split("-").str[0]
-        df["Size"]        = df["Seller SKU"].str.split("-").str[1]
-        df["Product Name"]= df["SKU Prefix"].map(lambda x: updated_mapping.get(x, "❓未识别"))
+        df["SKU Prefix"]   = df["Seller SKU"].str.split("-").str[0]
+        df["Size"]         = df["Seller SKU"].str.split("-").str[1]
+        df["Product Name"] = df["SKU Prefix"].map(lambda x: updated_mapping.get(x, "❓未识别"))
         df = df[["Product Name","Size","Seller SKU","Qty"]].sort_values(by=["Product Name","Size"])
 
-        # A. 展开件数（给拣货明细/出库用）
         pieces_total = int(df["Qty"].sum())
         st.subheader(f"📦 实际拣货总数量：{pieces_total}")
 
-        # B. 对账口径（按行，与拣货单 Item quantity 对齐）
         if expected_total is not None:
             if raw_total == expected_total:
                 st.success(f"🧾 对账口径（按行）：{raw_total}  ✅ 与拣货单一致")
@@ -239,7 +220,6 @@ if uploaded_file:
 
         st.dataframe(df, use_container_width=True)
 
-        # 下载结果（保持你原来的文件名/编码）
         csv = df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 下载产品明细 CSV", data=csv, file_name="product_summary_named.csv", mime="text/csv")
 
