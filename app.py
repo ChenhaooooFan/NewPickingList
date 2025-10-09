@@ -113,17 +113,23 @@ if uploaded_file:
     for page in doc:
         text += page.get_text()
 
-    # ——— 预处理：修复被拆开的 SKU & 清理隐形字符 ———
-    # 把被硬换行拆开的连续字母/数字粘合，例如 NPJ011NPX01\n5-M -> NPJ011NPX015-M
+    # —— 1) 文本规范化 —— #
+    # a) 粘合字母/数字之间的换行（NPJ011NPX01\n5-M -> NPJ011NPX015-M）
     text = re.sub(r'(?<=[A-Z0-9])\r?\n(?=[A-Z0-9])', '', text)
-    # 清理软连字符、零宽空格
-    text = text.replace('\u00ad', '').replace('\u200b', '')
+    # b) 清理隐形/特殊空格与软连字符
+    text = (text
+            .replace('\u00ad', '')   # 软连字符
+            .replace('\u200b', '')   # 零宽空格
+            .replace('\u00a0', ' ')  # NBSP
+           )
+    # c) 把其他非常见空白统一成普通空格，避免 \s 匹配不到
+    text = re.sub(r'[\u2000-\u200A\u202F\u205F\u3000]', ' ', text)
 
     # 读取拣货单总数（原逻辑保持）
     total_quantity_match = re.search(r"Item quantity[:：]?\s*(\d+)", text)
     expected_total = int(total_quantity_match.group(1)) if total_quantity_match else None
 
-    # ——— 正则：先严格匹配（要求后面有 9+ 位条码），若无结果再走宽松匹配 ———
+    # —— 2) 正则：严格→宽松双通道 —— #
     strict_pat = r"((?:[A-Z]{3}\s*\d\s*\d\s*\d){1,4}\s*-\s*[SML])\s+(\d+)\s+\d{9,}"
     loose_pat  = r"((?:[A-Z]{3}\s*\d\s*\d\s*\d){1,4}\s*-\s*[SML])\s+(\d+)(?:\s+\d{7,})?"
 
@@ -134,10 +140,8 @@ if uploaded_file:
     sku_counts = defaultdict(int)
 
     def expand_bundle_or_single(sku_with_size: str, qty: int):
-        """
-        1–4件 Bundle 拆分；不满足规则则原样累计。
-        """
-        sku_with_size = re.sub(r'\s+', '', sku_with_size)  # 去掉内部空白
+        """1–4 件 bundle 拆分；不满足规则则原样累计。"""
+        sku_with_size = re.sub(r'\s+', '', sku_with_size)  # 清掉内部空白，确保 NPJ011NPX015-M
         if "-" not in sku_with_size:
             sku_counts[sku_with_size] += qty
             return
@@ -156,18 +160,17 @@ if uploaded_file:
         expand_bundle_or_single(raw_sku, int(qty))
 
     if not sku_counts:
-        st.error("未识别到任何 SKU 行。可能原因：\n- PDF 是图片扫描、文字不可选\n- 单据里没有条码/长数字，或格式与现有规则不一致\n- SKU/数量被非常规换行拆分\n\n建议：尝试上传原始可复制文本的 PDF，或把该 PDF 发我做一次适配。")
-        with st.expander("调试预览（前 600 字）"):
-            st.text(text[:600])
+        st.error("未识别到任何 SKU 行。已尝试粘合换行与宽松匹配，但仍未命中。\n建议：上传可复制文本的原始 PDF，或把该文件发我做一次专用适配。")
+        with st.expander("调试预览（前 800 字）"):
+            st.text(text[:800])
         st.stop()
 
-    # ——— 后续保持不变 ———
+    # —— 3) 后续保持不变 —— #
     df = pd.DataFrame(list(sku_counts.items()), columns=["Seller SKU", "Qty"])
     df["SKU Prefix"] = df["Seller SKU"].apply(lambda x: x.split("-")[0])
     df["Size"] = df["Seller SKU"].apply(lambda x: x.split("-")[1])
     df["Product Name"] = df["SKU Prefix"].apply(lambda x: updated_mapping.get(x, "❓未识别"))
 
-    # 用户手动补全未知前缀
     unknown = df[df["Product Name"].str.startswith("❓")]["SKU Prefix"].unique().tolist()
     if unknown:
         st.warning("⚠️ 有未识别的 SKU 前缀，请补全：")
