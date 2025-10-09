@@ -113,17 +113,21 @@ if uploaded_file:
     for page in doc:
         text += page.get_text()
 
-    # 读取拣货单总数（原逻辑保持）
+    # ① 读取拣货单总数（原逻辑保持）
     total_quantity_match = re.search(r"Item quantity[:：]?\s*(\d+)", text)
     expected_total = int(total_quantity_match.group(1)) if total_quantity_match else None
 
-    # —— 升级：兼容 1–4 件 Bundle —— 
-    # 单品：      ABC123-S
-    # 2件 Bundle：ABC123DEF456-S
-    # 3件 Bundle：ABC123DEF456GHI789-S
-    # 4件 Bundle：ABC123DEF456GHI789JKL012-S
-    # 要求其后仍跟：数量 + 至少 9 位数字（订单/条码）
-    pattern = r"((?:[A-Z]{3}\d{3}){1,4}-[SML])\s+(\d+)\s+\d{9,}"
+    # ② 预处理：把被硬换行拆开的 **字母/数字之间** 的换行粘合起来
+    #    例如：NPJ011NPX01\n5-M  ->  NPJ011NPX015-M
+    text = re.sub(r'(?<=[A-Z0-9])\n(?=[A-Z0-9])', '', text)
+
+    # ③ 升级正则：兼容 1–4 件 Bundle，且允许片段内有空白（更稳健）
+    #    单品：      ABC123-S
+    #    2件 Bundle：ABC123DEF456-S
+    #    3件 Bundle：ABC123DEF456GHI789-S
+    #    4件 Bundle：ABC123DEF456GHI789JKL012-S
+    #    其后仍需：数量 + 至少 9 位数字（订单/条码）
+    pattern = r"((?:[A-Z]{3}\s*\d\s*\d\s*\d){1,4}\s*-\s*[SML])\s+(\d+)\s+\d{9,}"
     matches = re.findall(pattern, text)
 
     sku_counts = defaultdict(int)
@@ -138,6 +142,9 @@ if uploaded_file:
         规则：按每 6 位（3字母+3数字）切片，长度在 6–24 时视为合法，逐一展开并分别累计相同数量。
         否则回退为原样累计（保持宽容性）。
         """
+        # 去除内部空白，确保形如 NPJ011NPX015-M
+        sku_with_size = re.sub(r'\s+', '', sku_with_size)
+
         if "-" not in sku_with_size:
             sku_counts[sku_with_size] += qty
             return
@@ -155,8 +162,11 @@ if uploaded_file:
         # 回退：不满足规则则按原样累计
         sku_counts[sku_with_size] += qty
 
+    # ④ 计数：送入拆分器（会自动把 bundle 拆成单品计数）
     for raw_sku, qty in matches:
-        expand_bundle_or_single(raw_sku, int(qty))
+        # 先把匹配到的原始 SKU 去空白，再扩展
+        clean_sku = re.sub(r'\s+', '', raw_sku)
+        expand_bundle_or_single(clean_sku, int(qty))
 
     if sku_counts:
         df = pd.DataFrame(list(sku_counts.items()), columns=["Seller SKU", "Qty"])
