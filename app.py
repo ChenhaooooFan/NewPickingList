@@ -36,6 +36,14 @@ sku_prefix_to_name = {
 }
 updated_mapping = dict(sku_prefix_to_name)
 
+# 🆕 新款映射表（只填 SKU 前缀，不带 -S/M/L）
+new_sku_prefix = {
+    "NPX021":"Twinkle Pine",
+    "NOF018":"Glacier Bloom",
+    "NOJ010":"Ruby Christmas",
+    "NPX022":"Merry Charm"
+}
+
 # ---------- 小工具 ----------
 # 支持 NM001，无尺码 bundle
 SKU_BUNDLE = re.compile(r'((?:[A-Z]{3}\d{3}|NM001){1,4}-[SML])', re.DOTALL)
@@ -57,9 +65,15 @@ def fix_orphan_digit_before_size(txt: str) -> str:
 def parse_code_parts(code: str):
     parts, i, n = [], 0, len(code)
     while i < n:
-        if code.startswith('NM001', i): parts.append('NM001'); i += 5; continue
+        if code.startswith('NM001', i): 
+            parts.append('NM001'); 
+            i += 5; 
+            continue
         seg = code[i:i+6]
-        if re.fullmatch(r'[A-Z]{3}\d{3}', seg): parts.append(seg); i += 6; continue
+        if re.fullmatch(r'[A-Z]{3}\d{3}', seg):
+            parts.append(seg); 
+            i += 6; 
+            continue
         return None
     return parts if 1 <= len(parts) <= 4 else None
 
@@ -114,7 +128,8 @@ if uploaded_file:
     # —— 无尺码 NM001 ——
     for m in NM_ONLY.finditer(text_fixed):
         nxt = text_fixed[m.end(): m.end()+3]
-        if '-' in nxt: continue
+        if '-' in nxt: 
+            continue
         after = text_fixed[m.end(): m.end()+80]
         mq = QTY_AFTER.search(after)
         qty = int(mq.group(1)) if mq else 1
@@ -132,7 +147,16 @@ if uploaded_file:
         df["SKU Prefix"]   = df["Seller SKU"].str.split("-").str[0]
         df["Size"]         = df["Seller SKU"].str.split("-").str[1]
         df["Product Name"] = df["SKU Prefix"].map(lambda x: updated_mapping.get(x, "❓未识别"))
-        df = df[["Product Name", "Size", "Seller SKU", "Qty"]].sort_values(by=["Product Name","Size"])
+
+        # 保持原来的列顺序基础
+        df = df[["Product Name", "Size", "Seller SKU", "Qty"]]
+
+        # 🆕 新款优先排序（新款映射表在上，老款在下）
+        is_new = df["Seller SKU"].str.split("-").str[0].isin(new_sku_prefix.keys())
+        df = df.assign(_is_new=is_new).sort_values(
+            by=["_is_new", "Product Name", "Size"],
+            ascending=[False, True, True]
+        ).drop(columns=["_is_new"])
 
         # 📊 对账展示
         st.subheader("📦 对账结果")
@@ -155,10 +179,19 @@ if uploaded_file:
         else:
             st.error(f"❌ 不一致：PDF {expected_total} → 调整后 {expected_final}，实际 {total_qty}")
 
-        # 明细表
-        st.dataframe(df, use_container_width=True)
+        # 🌸 新款淡粉色高亮
+        def highlight_newrow(row):
+            prefix = str(row["Seller SKU"]).split("-")[0]
+            if prefix in new_sku_prefix:
+                return ['background-color: #ffe4ec'] * len(row)
+            return [''] * len(row)
 
-        # 下载
+        df_styled = df.style.apply(highlight_newrow, axis=1)
+
+        # 明细表
+        st.dataframe(df_styled, use_container_width=True)
+
+        # 下载（仍用原始 df，无颜色）
         csv = df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 下载产品明细 CSV", data=csv, file_name="product_summary_named.csv", mime="text/csv")
 
