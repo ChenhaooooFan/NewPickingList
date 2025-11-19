@@ -11,6 +11,7 @@ st.caption("提取 Seller SKU + 数量，并根据 SKU 前缀映射产品名称�
 uploaded_file = st.file_uploader("📤 上传拣货 PDF", type=["pdf"])
 
 # ✅ 映射表（保持不变）
+# 该映射表保持不变
 sku_prefix_to_name = {
     "NDF001":"Tropic Paradise","NPX014":"Afterglow","NDX001":"Pinky Promise","NHF001":"Gothic Moon","NHX001":"Emerald Garden",
     "NLF001":"Divine Emblem","NLF002":"Athena's Glow","NLJ001":"Golden Pearl","NLJ002":"BAROQUE BLISS","NLJ003":"Rainbow Reef",
@@ -39,7 +40,7 @@ sku_prefix_to_name = {
 }
 updated_mapping = dict(sku_prefix_to_name)
 
-# 🆕 新款映射表（只填 SKU 前缀，不带 -S/M/L）
+# 🆕 新款映射表，所有新款加到这，格式为："NOF018":"Glacier Bloom"
 new_sku_prefix = {
 
 }
