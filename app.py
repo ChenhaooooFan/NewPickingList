@@ -41,10 +41,7 @@ updated_mapping = dict(sku_prefix_to_name)
 
 # 🆕 新款映射表（只填 SKU 前缀，不带 -S/M/L）
 new_sku_prefix = {
-    "NPX021":"Twinkle Pine",
-    "NOF018":"Glacier Bloom",
-    "NOJ010":"Ruby Christmas",
-    "NPX022":"Merry Charm"
+
 }
 
 # ---------- 小工具 ----------
