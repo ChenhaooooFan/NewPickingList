@@ -37,7 +37,7 @@ sku_prefix_to_name = {
     "NOJ010":"Ruby Christmas","NPX022":"Merry Charm","NPF022":"Holiday Sparkl","NOF020":"Garnet Muse","NOF019":"Twinkle Christmas",
     "NOJ011":"Snowy Comet","NOX013":"Christmas Village","NOJ009":"Reindeer Glow","NIX002":"Golden Orchid", "NPX021":"Twinkle Pine",
     "NOF018":"Glacier Bloom","NOJ010":"Ruby Christmas","NPX022":"Merry Charm", "NPJ014":"Snow Pixie","NPJ018":"Frost Ruby",
-    "NPJ017":"Starlit Rift","NPF021":"Candy Cane", "NPJ016":"Fairy Nectar","NPJ015":"Icy Viper","NOX014":"Taro Petal"
+    "NPJ017":"Starlit Rift","NPF021":"Candy Cane", "NPJ016":"Fairy Nectar","NPJ015":"Icy Viper","NOX014":"Taro Petal","NVT001":"Tool Kits"
 }
 updated_mapping = dict(sku_prefix_to_name)
 
@@ -128,7 +128,7 @@ if uploaded_file:
         bundle_extra += extra
         mystery_units += myst
 
-    # —— 无尺码 NM001 ——
+    # —— 无尺码 NF001 ——
     for m in NM_ONLY.finditer(text_fixed):
         nxt = text_fixed[m.end(): m.end()+3]
         if '-' in nxt: 
@@ -136,7 +136,7 @@ if uploaded_file:
         after = text_fixed[m.end(): m.end()+80]
         mq = QTY_AFTER.search(after)
         qty = int(mq.group(1)) if mq else 1
-        sku_counts['NM001'] += qty
+        sku_counts['NF001'] += qty
         mystery_units += qty
 
     # 实际提取
