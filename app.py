@@ -49,7 +49,7 @@ new_sku_prefix = {
 
 # ---------- 小工具 ----------
 # 支持 NM001，无尺码 bundle
-SKU_BUNDLE = re.compile(r'((?:[A-Z]{3}\d{3}|NM001){1,4}-[SML])', re.DOTALL)
+SKU_BUNDLE = re.compile(r'((?:[A-Z]{3}\d{3}|NF001){1,4}-[SML])', re.DOTALL)
 QTY_AFTER  = re.compile(r'\b([1-9]\d{0,2})\b')
 ITEM_QTY_RE = re.compile(r"Item\s+quantity[:：]?\s*(\d+)", re.I)
 NM_ONLY = re.compile(r'\bNM001\b')
@@ -166,7 +166,7 @@ if uploaded_file:
         st.markdown(f"""
         - PDF 标注数量（Item quantity）: **{expected_total}**  
         - bundle 额外件数（+）: **{bundle_extra}**  
-        - Mystery(NM001) 件数（−）: **{mystery_units}**  
+        - Mystery(NF001) 件数（−）: **{mystery_units}**  
         - 调整后期望值（bundle−Mystery）: **{expected_final}**  
         - 实际提取数量: **{total_qty}**
         """)
