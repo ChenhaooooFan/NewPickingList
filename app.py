@@ -48,11 +48,11 @@ new_sku_prefix = {
 }
 
 # ---------- 小工具 ----------
-# 支持 NM001，无尺码 bundle
+# 支持 NF001，无尺码 bundle
 SKU_BUNDLE = re.compile(r'((?:[A-Z]{3}\d{3}|NF001){1,4}-[SML])', re.DOTALL)
 QTY_AFTER  = re.compile(r'\b([1-9]\d{0,2})\b')
 ITEM_QTY_RE = re.compile(r"Item\s+quantity[:：]?\s*(\d+)", re.I)
-NM_ONLY = re.compile(r'\bNM001\b')
+NM_ONLY = re.compile(r'\bNF001\b')
 
 def normalize_text(t: str) -> str:
     return t.replace("\u00ad","").replace("\u200b","").replace("\u00a0"," ").replace("–","-").replace("—","-")
@@ -84,7 +84,7 @@ def expand_bundle(counter: dict, sku_with_size: str, qty: int):
     s = re.sub(r'\s+', '', sku_with_size)
     if '-' not in s:
         counter[s] += qty
-        return 0, (qty if s == 'NM001' else 0)
+        return 0, (qty if s == 'NF001' else 0)
     code, size = s.split('-', 1)
     parts = parse_code_parts(code)
     if parts:
@@ -92,12 +92,12 @@ def expand_bundle(counter: dict, sku_with_size: str, qty: int):
         for p in parts:
             key = f"{p}-{size}"
             counter[key] += qty
-            if p == 'NM001':
+            if p == 'NF001':
                 mystery_units += qty
         extra = (len(parts) - 1) * qty
         return extra, mystery_units
     counter[s] += qty
-    return 0, (qty if code == 'NM001' else 0)
+    return 0, (qty if code == 'NF001' else 0)
 
 # ---------- 主逻辑 ----------
 if uploaded_file:
