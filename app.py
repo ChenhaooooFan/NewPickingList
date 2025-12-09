@@ -37,15 +37,15 @@ sku_prefix_to_name = {
     "NOJ010":"Ruby Christmas","NPX022":"Merry Charm","NPF022":"Holiday Sparkl","NOF020":"Garnet Muse","NOF019":"Twinkle Christmas",
     "NOJ011":"Snowy Comet","NOX013":"Christmas Village","NOJ009":"Reindeer Glow","NIX002":"Golden Orchid", "NPX021":"Twinkle Pine",
     "NOF018":"Glacier Bloom","NOJ010":"Ruby Christmas","NPX022":"Merry Charm", "NPJ014":"Snow Pixie","NPJ018":"Frost Ruby",
-    "NPJ017":"Starlit Rift","NPF021":"Candy Cane", "NPJ016":"Fairy Nectar","NPJ015":"Icy Viper","NOX014":"Taro Petal","NVT001":"Tool Kits",
-    "NF001":"Free Giveaway"
+    "NPJ017":"Starlit Rift","NPF021":"Candy Cane","NPJ016":"Fairy Nectar","NPJ015":"Icy Viper","NOX014":"Taro Petal","NVT001":"Tool Kits",
+    "NF001":"Free Giveaway","NIF001":"Lilac Veil","NIF002":"Gingerbread","NOX015":"Glitter Doll"
 }
 updated_mapping = dict(sku_prefix_to_name)
 
 # 🆕 新款映射表，所有新款加到这，格式为："NOF018":"Glacier Bloom"
 new_sku_prefix = {
     "NPJ014":"Snow Pixie","NPJ018":"Frost Ruby","NPJ017":"Starlit Rift","NPF021":"Candy Cane",
-    "NPJ016":"Fairy Nectar","NPJ015":"Icy Viper","NOX014":"Taro Petal"
+    "NPJ016":"Fairy Nectar","NPJ015":"Icy Viper","NOX014":"Taro Petal","NIF001":"Lilac Veil","NIF002":"Gingerbread","NOX015":"Glitter Doll"
 }
 
 # ---------- 小工具 ----------
