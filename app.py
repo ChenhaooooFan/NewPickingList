@@ -11,7 +11,6 @@ st.caption("提取 Seller SKU + 数量，并根据 SKU 前缀映射产品名称�
 uploaded_file = st.file_uploader("📤 上传拣货 PDF", type=["pdf"])
 
 # ✅ 映射表（保持不变）
-# 该映射表保持不变
 sku_prefix_to_name = {
     "NDF001":"Tropic Paradise","NPX014":"Afterglow","NDX001":"Pinky Promise","NHF001":"Gothic Moon","NHX001":"Emerald Garden",
     "NLF001":"Divine Emblem","NLF002":"Athena's Glow","NLJ001":"Golden Pearl","NLJ002":"BAROQUE BLISS","NLJ003":"Rainbow Reef",
@@ -35,32 +34,43 @@ sku_prefix_to_name = {
     "NOF016":"Cinnamon Bloom","NOX010":"Twilight Muse","NPX020":"Peachy Glaze","NPX019":"Blossom Tart","NPJ013":"Velvet Cherry",
     "NOX012":"Harvest Glaze","NOJ008":"Crystal Whisper","NOF017":"Twinkle Bow","NPX021":"Twinkle Pine","NOF018":"Glacier Bloom",
     "NOJ010":"Rosé Noir","NPX022":"Merry Charm","NPF022":"Holiday Sparkl","NOF020":"Garnet Muse","NOF019":"Twinkle Christmas",
-    "NOJ011":"Snowy Comet","NOX013":"Christmas Village","NOJ009":"Reindeer Glow","NIX002":"Golden Orchid", "NPX021":"Twinkle Pine",
-    "NOF018":"Glacier Bloom","NOJ010":"Rosé Noir","NPX022":"Merry Charm", "NPJ014":"Snow Pixie","NPJ018":"Frost Ruby",
-    "NPJ017":"Starlit Rift","NPF021":"Candy Cane","NPJ016":"Fairy Nectar","NPJ015":"Icy Viper","NOX014":"Taro Petal","NVT001":"Tool Kits",
-    "NF001":"Free Giveaway","NIF001":"Lilac Veil","NIF002":"Gingerbread","NOX015":"Glitter Doll","NOJ012":"Winery Flame",
-    "NOF021":"Velvet Ribbon","NPX024":"Rose Wine","NPX023":"Rosy Promise","NMF001":"Cherry Crush","NBX001":"Ballet Petal",
-    "NMF003":"Royal Treasure","NMF002":"Safari Princess","NOJ013":"Midnight Denim","NOJ014":"Imperial Frost"
+    "NOJ011":"Snowy Comet","NOX013":"Christmas Village","NOJ009":"Reindeer Glow","NIX002":"Golden Orchid",
+    "NPJ014":"Snow Pixie","NPJ018":"Frost Ruby","NPJ017":"Starlit Rift","NPF021":"Candy Cane","NPJ016":"Fairy Nectar",
+    "NPJ015":"Icy Viper","NOX014":"Taro Petal","NVT001":"Tool Kits","NF001":"Free Giveaway","NIF001":"Lilac Veil",
+    "NIF002":"Gingerbread","NOX015":"Glitter Doll","NOJ012":"Winery Flame","NOF021":"Velvet Ribbon","NPX024":"Rose Wine",
+    "NPX023":"Rosy Promise","NMF001":"Cherry Crush","NBX001":"Ballet Petal","NMF003":"Royal Treasure","NMF002":"Safari Princess",
+    "NOJ013":"Midnight Denim","NOJ014":"Imperial Frost"
 }
 updated_mapping = dict(sku_prefix_to_name)
 
-# 🆕 新款映射表，所有新款加到这，格式为："NOF018":"Glacier Bloom"
+# 🆕 新款映射表
 new_sku_prefix = {
     "NPJ014":"Snow Pixie","NPJ018":"Frost Ruby","NPJ017":"Starlit Rift","NPF021":"Candy Cane",
-    "NPJ016":"Fairy Nectar","NPJ015":"Icy Viper","NOX014":"Taro Petal","NIF001":"Lilac Veil","NIF002":"Gingerbread","NOX015":"Glitter Doll","NOJ012":"Winery Flame","NOF021":"Velvet Ribbon","NBX001":"Ballet Petal","NMF003":"Royal Treasure","NOJ014":"Imperial Frost","NOJ013":"Midnight Denim"
+    "NPJ016":"Fairy Nectar","NPJ015":"Icy Viper","NOX014":"Taro Petal","NIF001":"Lilac Veil","NIF002":"Gingerbread",
+    "NOX015":"Glitter Doll","NOJ012":"Winery Flame","NOF021":"Velvet Ribbon","NBX001":"Ballet Petal","NMF003":"Royal Treasure",
+    "NOJ014":"Imperial Frost","NOJ013":"Midnight Denim"
 }
 
 # ---------- 小工具 ----------
-# 支持 NF001，无尺码 bundle
-SKU_BUNDLE = re.compile(r'((?:[A-Z]{3}\d{3}|NF001){1,4}-[SML])', re.DOTALL)
+# ✅ 所有“短横家族”统一识别（PDF 经常混用）
+DASH_CLASS = r"[‐-‒–—−﹣－-]"  # 包含: U+2010/U+2011/U+2012/U+2013/U+2014/U+2212/等 + 普通-
+
+SKU_BUNDLE = re.compile(rf"((?:[A-Z]{{3}}\d{{3}}|NF001){{1,4}}{DASH_CLASS}[SML])", re.DOTALL)
 QTY_AFTER  = re.compile(r'\b([1-9]\d{0,2})\b')
 ITEM_QTY_RE = re.compile(r"Item\s+quantity[:：]?\s*(\d+)", re.I)
 NM_ONLY = re.compile(r'\bNF001\b')
 
 def normalize_text(t: str) -> str:
-    return t.replace("\u00ad","").replace("\u200b","").replace("\u00a0"," ").replace("–","-").replace("—","-")
+    # 去掉隐形字符 + 把所有短横统一成 -
+    t = (t.replace("\u00ad","")   # soft hyphen
+           .replace("\u200b","")  # zero width space
+           .replace("\u00a0"," ") # nbsp
+    )
+    t = re.sub(DASH_CLASS, "-", t)
+    return t
 
 def fix_orphan_digit_before_size(txt: str) -> str:
+    # ✅ 已经 normalize 成普通 "-"，这里按 "-" 处理即可
     pattern = re.compile(r'(?P<prefix>(?:[A-Z]{3}\d{3}|NM001){0,3}[A-Z]{3}\d{2})\s*[\r\n]+\s*(?P<d>\d)\s*-\s*(?P<size>[SML])')
     def _join(m): return f"{m.group('prefix')}{m.group('d')}-{m.group('size')}"
     prev, cur = None, txt
@@ -71,23 +81,27 @@ def fix_orphan_digit_before_size(txt: str) -> str:
 def parse_code_parts(code: str):
     parts, i, n = [], 0, len(code)
     while i < n:
-        if code.startswith('NM001', i): 
-            parts.append('NM001'); 
-            i += 5; 
+        if code.startswith('NM001', i):
+            parts.append('NM001')
+            i += 5
             continue
         seg = code[i:i+6]
         if re.fullmatch(r'[A-Z]{3}\d{3}', seg):
-            parts.append(seg); 
-            i += 6; 
+            parts.append(seg)
+            i += 6
             continue
         return None
     return parts if 1 <= len(parts) <= 4 else None
 
 def expand_bundle(counter: dict, sku_with_size: str, qty: int):
     s = re.sub(r'\s+', '', sku_with_size)
+    # ✅ 双保险：把 SKU 内所有短横统一成 "-"
+    s = re.sub(DASH_CLASS, "-", s)
+
     if '-' not in s:
         counter[s] += qty
         return 0, (qty if s == 'NF001' else 0)
+
     code, size = s.split('-', 1)
     parts = parse_code_parts(code)
     if parts:
@@ -99,6 +113,7 @@ def expand_bundle(counter: dict, sku_with_size: str, qty: int):
                 mystery_units += qty
         extra = (len(parts) - 1) * qty
         return extra, mystery_units
+
     counter[s] += qty
     return 0, (qty if code == 'NF001' else 0)
 
@@ -124,6 +139,7 @@ if uploaded_file:
     # —— 含尺码部分 ——
     for m in SKU_BUNDLE.finditer(text_fixed):
         sku_raw = re.sub(r'\s+', '', m.group(1))
+        sku_raw = re.sub(DASH_CLASS, "-", sku_raw)
         after = text_fixed[m.end(): m.end()+50]
         mq = QTY_AFTER.search(after)
         qty = int(mq.group(1)) if mq else 1
@@ -134,7 +150,7 @@ if uploaded_file:
     # —— 无尺码 NF001 ——
     for m in NM_ONLY.finditer(text_fixed):
         nxt = text_fixed[m.end(): m.end()+3]
-        if '-' in nxt: 
+        if '-' in nxt:
             continue
         after = text_fixed[m.end(): m.end()+80]
         mq = QTY_AFTER.search(after)
@@ -150,15 +166,20 @@ if uploaded_file:
     # 表格输出
     if sku_counts:
         df = pd.DataFrame(list(sku_counts.items()), columns=["Seller SKU", "Qty"])
-        df["SKU Prefix"]   = df["Seller SKU"].str.split("-").str[0]
-        df["Size"]         = df["Seller SKU"].str.split("-").str[1]
+
+        # ✅ 双保险：Seller SKU 列里也统一短横
+        df["Seller SKU"] = df["Seller SKU"].astype(str).str.replace(DASH_CLASS, "-", regex=True)
+
+        # ✅ 用正则提取 Prefix/Size（比 split 更稳）
+        df["SKU Prefix"] = df["Seller SKU"].str.extract(r"^([A-Z]{3}\d{3}|NM001|NF001)")
+        df["Size"] = df["Seller SKU"].str.extract(r"-(S|M|L)\b")
         df["Product Name"] = df["SKU Prefix"].map(lambda x: updated_mapping.get(x, "❓未识别"))
 
         # 保持原来的列顺序基础
         df = df[["Product Name", "Size", "Seller SKU", "Qty"]]
 
         # 🆕 新款优先排序（新款映射表在上，老款在下）
-        is_new = df["Seller SKU"].str.split("-").str[0].isin(new_sku_prefix.keys())
+        is_new = df["Seller SKU"].str.extract(r"^([A-Z]{3}\d{3}|NM001|NF001)")[0].isin(new_sku_prefix.keys())
         df = df.assign(_is_new=is_new).sort_values(
             by=["_is_new", "Product Name", "Size"],
             ascending=[False, True, True]
@@ -203,3 +224,4 @@ if uploaded_file:
 
     else:
         st.error("未识别到任何 SKU。请确认 PDF 为可复制文本。")
+```
