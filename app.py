@@ -40,7 +40,7 @@ sku_prefix_to_name = {
     "NPJ017":"Starlit Rift","NPF021":"Candy Cane","NPJ016":"Fairy Nectar","NPJ015":"Icy Viper","NOX014":"Taro Petal","NVT001":"Tool Kits",
     "NF001":"Free Giveaway","NIF001":"Lilac Veil","NIF002":"Gingerbread","NOX015":"Glitter Doll","NOJ012":"Winery Flame",
     "NOF021":"Velvet Ribbon","NPX024":"Rose Wine","NPX023":"Rosy Promise","NMF001":"Cherry Crush","NBX001":"Ballet Petal",
-    "NMF003":"Royal Treasure","NMF002":"Safari Princess","NOJ014":"Imperial Frost","NOJ013":"Midnight Denim"
+    "NMF003":"Royal Treasure","NMF002":"Safari Princess","NOJ013":"Midnight Denim","NOJ014":"Imperial Frost"
 }
 updated_mapping = dict(sku_prefix_to_name)
 
