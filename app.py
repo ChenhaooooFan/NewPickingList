@@ -4,7 +4,7 @@ import re
 import fitz
 from collections import defaultdict
 
-st.set_page_config(page_title="拣货单汇总工具(´∀｀)♡", layout="centered")
+st.set_page_config(page_title="♡拣货单汇总工具♡", layout="centered")
 st.title("NailVesta 拣货单汇总工具💗")
 st.caption("提取 Seller SKU + 数量，并根据 SKU 前缀映射产品名称（支持 bundle 与 Mystery 对账规则）")
 
