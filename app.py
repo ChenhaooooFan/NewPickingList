@@ -55,7 +55,6 @@ new_sku_prefix = {
     "NPX025":"Cocoa Teddy","NVF001":"Golden Bloom","NBJ002":"Cherry Drop",
     "NOF022":"Aqua Reverie","NPF023":"Arctic Starlight","NDJ001":"Snow Knit"
 }
-}
 
 # ---------- 小工具 ----------
 # 支持 NF001，无尺码 bundle
