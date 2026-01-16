@@ -43,7 +43,8 @@ sku_prefix_to_name = {
     "NMF003":"Royal Treasure","NMF002":"Safari Princess","NOJ013":"Midnight Denim","NOJ014":"Imperial Frost","NOJ013":"Midnight Denim","NOJ014":"Imperial Frost",
     "NPJ019":"Gothic Mist","NOJ015":"Sapphire Bloom",
     "NPX025":"Cocoa Teddy","NVF001":"Golden Bloom","NBJ002":"Cherry Drop",
-    "NOF022":"Aqua Reverie","NPF023":"Arctic Starlight","NDJ001":"Snow Knit"
+    "NOF022":"Aqua Reverie","NPF023":"Arctic Starlight","NDJ001":"Snow Knit",
+    "NOX016":"Cherry Ribbon","NOX017":"Ruby Bow","NMF004":"Lavender Bloom"
 }
 updated_mapping = dict(sku_prefix_to_name)
 
@@ -53,7 +54,7 @@ new_sku_prefix = {
     "NPJ016":"Fairy Nectar","NPJ015":"Icy Viper","NOX014":"Taro Petal","NIF001":"Lilac Veil","NIF002":"Gingerbread","NOX015":"Glitter Doll","NOJ012":"Winery Flame","NOF021":"Velvet Ribbon","NBX001":"Ballet Petal","NMF003":"Royal Treasure","NOJ014":"Imperial Frost","NOJ013":"Midnight Denim","NOJ013":"Midnight Denim","NOJ014":"Imperial Frost",
     "NOJ015":"Sapphire Bloom",
     "NPX025":"Cocoa Teddy","NVF001":"Golden Bloom","NBJ002":"Cherry Drop",
-    "NOF022":"Aqua Reverie","NPF023":"Arctic Starlight","NDJ001":"Snow Knit"
+    "NOF022":"Aqua Reverie","NPF023":"Arctic Starlight","NDJ001":"Snow Knit","NOX017":"Ruby Bow","NMF004":"Lavender Bloom"
 }
 
 # ---------- 小工具 ----------
