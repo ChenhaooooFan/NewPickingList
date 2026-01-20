@@ -44,7 +44,7 @@ sku_prefix_to_name = {
     "NPJ019":"Gothic Mist","NOJ015":"Sapphire Bloom",
     "NPX025":"Cocoa Teddy","NVF001":"Golden Bloom","NBJ002":"Cherry Drop",
     "NOF022":"Aqua Reverie","NPF023":"Arctic Starlight","NDJ001":"Snow Knit",
-    "NOX016":"Cherry Ribbon","NOX017":"Ruby Bow","NMF004":"Lavender Bloom"
+    "NOX016":"Cherry Ribbon","NOX017":"Ruby Bow","NMF004":"Lavender Bloom","NDX002":"Cloudy Knit"
 }
 updated_mapping = dict(sku_prefix_to_name)
 
