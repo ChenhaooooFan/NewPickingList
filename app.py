@@ -50,11 +50,7 @@ updated_mapping = dict(sku_prefix_to_name)
 
 # 🆕 新款映射表，所有新款加到这，格式为："NOF018":"Glacier Bloom"
 new_sku_prefix = {
-    "NPJ014":"Snow Pixie","NPJ018":"Frost Ruby","NPJ017":"Starlit Rift","NPF021":"Candy Cane",
-    "NPJ016":"Fairy Nectar","NPJ015":"Icy Viper","NOX014":"Taro Petal","NIF001":"Lilac Veil","NIF002":"Gingerbread","NOX015":"Glitter Doll","NOJ012":"Winery Flame","NOF021":"Velvet Ribbon","NBX001":"Ballet Petal","NMF003":"Royal Treasure","NOJ014":"Imperial Frost","NOJ013":"Midnight Denim","NOJ013":"Midnight Denim","NOJ014":"Imperial Frost",
-    "NOJ015":"Sapphire Bloom",
-    "NPX025":"Cocoa Teddy","NVF001":"Golden Bloom","NBJ002":"Cherry Drop",
-    "NOF022":"Aqua Reverie","NPF023":"Arctic Starlight","NDJ001":"Snow Knit","NOX017":"Ruby Bow","NMF004":"Lavender Bloom","NPJ020":"Citrus Daisy","NOJ018":"Ribbon Lily"
+    "NPJ014":"Snow Pixie"
 }
 
 # ---------- 小工具 ----------
