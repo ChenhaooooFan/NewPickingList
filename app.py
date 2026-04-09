@@ -178,7 +178,7 @@ if uploaded_file:
         for sz in ["S", "M", "L"]:
             if sz not in pivot.columns:
                 pivot[sz] = 0
-        pivot = pivot[["SKU Prefix", "Product Name", "S", "M", "L"]]
+        pivot = pivot[["Product Name", "SKU Prefix", "S", "M", "L"]]
         pivot["Total"] = pivot["S"] + pivot["M"] + pivot["L"]
 
         # 无尺码行（如 NF001）追加
