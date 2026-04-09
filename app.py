@@ -161,15 +161,50 @@ if uploaded_file:
         df["Size"]         = df["Seller SKU"].str.split("-").str[1]
         df["Product Name"] = df["SKU Prefix"].map(lambda x: updated_mapping.get(x, "❓未识别"))
 
-        # 保持原来的列顺序基础
-        df = df[["Product Name", "Size", "Seller SKU", "Qty"]]
+        # ========== 改动1: 透视表 — 一个款式一行，S/M/L 各一列 ==========
+        # 先把无尺码的行（如 NF001）单独处理
+        df_sized = df[df["Size"].notna()].copy()
+        df_nosized = df[df["Size"].isna()].copy()
 
-        # 🆕 新款优先排序（新款映射表在上，老款在下）
-        is_new = df["Seller SKU"].str.split("-").str[0].isin(new_sku_prefix.keys())
-        df = df.assign(_is_new=is_new).sort_values(
-            by=["_is_new", "Product Name", "Size"],
-            ascending=[False, True, True]
-        ).drop(columns=["_is_new"])
+        pivot = df_sized.pivot_table(
+            index=["SKU Prefix", "Product Name"],
+            columns="Size",
+            values="Qty",
+            aggfunc="sum",
+            fill_value=0
+        ).reset_index()
+
+        # 确保 S/M/L 列都存在且按顺序
+        for sz in ["S", "M", "L"]:
+            if sz not in pivot.columns:
+                pivot[sz] = 0
+        pivot = pivot[["SKU Prefix", "Product Name", "S", "M", "L"]]
+        pivot["Total"] = pivot["S"] + pivot["M"] + pivot["L"]
+
+        # 无尺码行（如 NF001）追加
+        if not df_nosized.empty:
+            for _, row in df_nosized.iterrows():
+                new_row = {
+                    "SKU Prefix": row["SKU Prefix"],
+                    "Product Name": row["Product Name"],
+                    "S": 0, "M": 0, "L": 0,
+                    "Total": row["Qty"]
+                }
+                pivot = pd.concat([pivot, pd.DataFrame([new_row])], ignore_index=True)
+
+        # ========== 改动2: Free Giveaway (NF001) 放最后 ==========
+        is_free = pivot["SKU Prefix"] == "NF001"
+        is_new = pivot["SKU Prefix"].isin(new_sku_prefix.keys())
+
+        # 排序键: 0=新款, 1=普通款, 2=Free Giveaway
+        pivot["_sort"] = 1
+        pivot.loc[is_new, "_sort"] = 0
+        pivot.loc[is_free, "_sort"] = 2
+
+        pivot = pivot.sort_values(
+            by=["_sort", "Product Name"],
+            ascending=[True, True]
+        ).drop(columns=["_sort"]).reset_index(drop=True)
 
         # 📊 对账展示
         st.subheader("📦 对账结果")
@@ -192,20 +227,22 @@ if uploaded_file:
         else:
             st.error(f"❌ 不一致：PDF {expected_total} → 调整后 {expected_final}，实际 {total_qty}")
 
-        # 🌸 新款淡粉色高亮
-        def highlight_newrow(row):
-            prefix = str(row["Seller SKU"]).split("-")[0]
+        # 🌸 新款淡粉色高亮 + Free Giveaway 淡灰色
+        def highlight_row(row):
+            prefix = str(row["SKU Prefix"])
             if prefix in new_sku_prefix:
                 return ['background-color: #ffe4ec'] * len(row)
+            if prefix == "NF001":
+                return ['background-color: #f0f0f0'] * len(row)
             return [''] * len(row)
 
-        df_styled = df.style.apply(highlight_newrow, axis=1)
+        pivot_styled = pivot.style.apply(highlight_row, axis=1)
 
         # 明细表
-        st.dataframe(df_styled, use_container_width=True)
+        st.dataframe(pivot_styled, use_container_width=True)
 
-        # 下载（仍用原始 df，无颜色）
-        csv = df.to_csv(index=False).encode("utf-8-sig")
+        # 下载（用 pivot 原始数据）
+        csv = pivot.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 下载产品明细 CSV", data=csv, file_name="product_summary_named.csv", mime="text/csv")
 
     else:
