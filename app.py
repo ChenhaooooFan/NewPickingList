@@ -58,7 +58,6 @@ updated_mapping = dict(sku_prefix_to_name)
 new_sku_prefix = {
     "NOX025":"Golden Nectar","NWX002":"Meadow Daisy","NOX023":"Mermaid Glam","NOX021":"Peach Ember","NOX022":"Sunlit Petals","NOX024":"Teal Blossom","NVF006":"Lime Petals","NOJ022":"Leaf Petals"
 }
-}
 
 # ---------- 小工具 ----------
 # 支持 NF001，无尺码 bundle
