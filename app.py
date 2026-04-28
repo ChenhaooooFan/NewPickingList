@@ -56,7 +56,8 @@ updated_mapping = dict(sku_prefix_to_name)
 
 # 🆕 新款映射表，所有新款加到这，格式为："NOF018":"Glacier Bloom"
 new_sku_prefix = {
-    "NPJ014":"Snow Pixie"
+    "NOX025":"Golden Nectar","NWX002":"Meadow Daisy","NOX023":"Mermaid Glam","NOX021":"Peach Ember","NOX022":"Sunlit Petals","NOX024":"Teal Blossom","NVF006":"Lime Petals","NOJ022":"Leaf Petals"
+}
 }
 
 # ---------- 小工具 ----------
