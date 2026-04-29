@@ -8,10 +8,32 @@ st.set_page_config(page_title="拣货单汇总工具(´∀｀)♡", layout="cent
 st.title("NailVesta 拣货单汇总工具💗")
 st.caption("提取 Seller SKU + 数量，并根据 SKU 前缀映射产品名称（支持 bundle 与 Mystery 对账规则）")
 
+# ========== 🆕 库位映射配置 ==========
+catalog_file = st.file_uploader(
+    "📚 上传产品图册 CSV（包含 SKU 与库位列）",
+    type=["csv"],
+    key="catalog",
+    help="可选。上传后会按库位排序拣货单，方便仓库按动线拣货"
+)
+
+sku_to_location = {}
+if catalog_file:
+    try:
+        catalog_df = pd.read_csv(catalog_file, dtype=str)
+        if 'SKU' in catalog_df.columns and '库位' in catalog_df.columns:
+            catalog_df['SKU'] = catalog_df['SKU'].astype(str).str.strip()
+            catalog_df['库位'] = catalog_df['库位'].fillna('').astype(str).str.strip()
+            valid = catalog_df[catalog_df['库位'] != '']
+            sku_to_location = dict(zip(valid['SKU'], valid['库位']))
+            st.success(f"✅ 已加载 {len(sku_to_location)} 个 SKU 的库位")
+        else:
+            st.warning("⚠️ 图册缺少 'SKU' 或 '库位' 列")
+    except Exception as e:
+        st.error(f"读取图册失败: {e}")
+
 uploaded_file = st.file_uploader("📤 上传拣货 PDF", type=["pdf"])
 
 # ✅ 映射表（保持不变）
-# 该映射表保持不变
 sku_prefix_to_name = {
     "NDF001":"Tropic Paradise","NPX014":"Afterglow","NDX001":"Pinky Promise","NHF001":"Gothic Moon","NHX001":"Emerald Garden",
     "NLF001":"Divine Emblem","NLF002":"Athena's Glow","NLJ001":"Golden Pearl","NLJ002":"BAROQUE BLISS","NLJ003":"Rainbow Reef",
@@ -54,13 +76,12 @@ sku_prefix_to_name = {
 }
 updated_mapping = dict(sku_prefix_to_name)
 
-# 🆕 新款映射表，所有新款加到这，格式为："NOF018":"Glacier Bloom"
+# 🆕 新款映射表
 new_sku_prefix = {
     "NOX025":"Golden Nectar","NWX002":"Meadow Daisy","NOX023":"Mermaid Glam","NOX021":"Peach Ember","NOX022":"Sunlit Petals","NOX024":"Teal Blossom","NVF006":"Lime Petals","NOJ022":"Leaf Petals"
 }
 
 # ---------- 小工具 ----------
-# 支持 NF001，无尺码 bundle
 SKU_BUNDLE = re.compile(r'((?:[A-Z]{3}\d{3}|NF001){1,4}-[SML])', re.DOTALL)
 QTY_AFTER  = re.compile(r'\b([1-9]\d{0,2})\b')
 ITEM_QTY_RE = re.compile(r"Item\s+quantity[:：]?\s*(\d+)", re.I)
@@ -111,6 +132,16 @@ def expand_bundle(counter: dict, sku_with_size: str, qty: int):
     counter[s] += qty
     return 0, (qty if code == 'NF001' else 0)
 
+# ---------- 🆕 库位排序辅助函数 ----------
+def location_sort_key(loc: str):
+    if not loc or loc == "未识别库位":
+        return (99, 99, 99)
+    m = re.match(r'^([AB])-(\d{2})-(\d{2})$', loc)
+    if not m:
+        return (98, 0, 0)
+    zone = 0 if m.group(1) == 'A' else 1
+    return (zone, int(m.group(2)), int(m.group(3)))
+
 # ---------- 主逻辑 ----------
 if uploaded_file:
     raw = uploaded_file.read()
@@ -118,19 +149,15 @@ if uploaded_file:
     text = "\n".join([p.get_text("text") for p in doc])
     text = normalize_text(text)
 
-    # 对账原始数量
     m_total = ITEM_QTY_RE.search(text)
     expected_total = int(m_total.group(1)) if m_total else 0
 
-    # 修复换行断裂 SKU
     text_fixed = fix_orphan_digit_before_size(text)
 
-    # 提取 SKU 数量
     sku_counts = defaultdict(int)
     bundle_extra = 0
     mystery_units = 0
 
-    # —— 含尺码部分 ——
     for m in SKU_BUNDLE.finditer(text_fixed):
         sku_raw = re.sub(r'\s+', '', m.group(1))
         after = text_fixed[m.end(): m.end()+50]
@@ -140,7 +167,6 @@ if uploaded_file:
         bundle_extra += extra
         mystery_units += myst
 
-    # —— 无尺码 NF001 ——
     for m in NM_ONLY.finditer(text_fixed):
         nxt = text_fixed[m.end(): m.end()+3]
         if '-' in nxt: 
@@ -151,20 +177,16 @@ if uploaded_file:
         sku_counts['NF001'] += qty
         mystery_units += qty
 
-    # 实际提取
     total_qty = sum(sku_counts.values())
     expected_bundle = expected_total + bundle_extra
-    expected_final = expected_bundle - mystery_units  # ✅ 对账规则：bundle + mystery 抵扣
+    expected_final = expected_bundle - mystery_units
 
-    # 表格输出
     if sku_counts:
         df = pd.DataFrame(list(sku_counts.items()), columns=["Seller SKU", "Qty"])
         df["SKU Prefix"]   = df["Seller SKU"].str.split("-").str[0]
         df["Size"]         = df["Seller SKU"].str.split("-").str[1]
         df["Product Name"] = df["SKU Prefix"].map(lambda x: updated_mapping.get(x, "❓未识别"))
 
-        # ========== 改动1: 透视表 — 一个款式一行，S/M/L 各一列 ==========
-        # 先把无尺码的行（如 NF001）单独处理
         df_sized = df[df["Size"].notna()].copy()
         df_nosized = df[df["Size"].isna()].copy()
 
@@ -176,14 +198,12 @@ if uploaded_file:
             fill_value=0
         ).reset_index()
 
-        # 确保 S/M/L 列都存在且按顺序
         for sz in ["S", "M", "L"]:
             if sz not in pivot.columns:
                 pivot[sz] = 0
         pivot = pivot[["Product Name", "SKU Prefix", "S", "M", "L"]]
         pivot["Total"] = pivot["S"] + pivot["M"] + pivot["L"]
 
-        # 无尺码行（如 NF001）追加
         if not df_nosized.empty:
             for _, row in df_nosized.iterrows():
                 new_row = {
@@ -194,19 +214,37 @@ if uploaded_file:
                 }
                 pivot = pd.concat([pivot, pd.DataFrame([new_row])], ignore_index=True)
 
-        # ========== 改动2: Free Giveaway (NF001) 放最后 ==========
+        # ========== 🆕 加入库位列 ==========
+        pivot["库位"] = pivot["SKU Prefix"].map(
+            lambda x: sku_to_location.get(x, "未识别库位")
+        )
+
+        # ========== 🆕 排序模式切换 ==========
+        sort_mode = st.radio(
+            "🔀 排序方式",
+            ["📦 按库位顺序（拣货模式）", "🔤 按字母顺序（A-Z）"],
+            horizontal=True,
+            help="拣货模式：从 A-01-01 顺着货架走一遍即可。字母顺序：按产品名 A-Z 排列，方便查找。"
+        )
+
         is_free = pivot["SKU Prefix"] == "NF001"
-        is_new = pivot["SKU Prefix"].isin(new_sku_prefix.keys())
+        pivot["_free"] = is_free.astype(int)
 
-        # 排序键: 0=新款, 1=普通款, 2=Free Giveaway
-        pivot["_sort"] = 1
-        pivot.loc[is_new, "_sort"] = 0
-        pivot.loc[is_free, "_sort"] = 2
+        if sort_mode.startswith("📦"):
+            pivot["_loc_key"] = pivot["库位"].apply(location_sort_key)
+            pivot = pivot.sort_values(
+                by=["_free", "_loc_key", "Product Name"],
+                ascending=[True, True, True]
+            ).drop(columns=["_loc_key", "_free"]).reset_index(drop=True)
+        else:
+            pivot["_name_key"] = pivot["Product Name"].str.lower()
+            pivot = pivot.sort_values(
+                by=["_free", "_name_key"],
+                ascending=[True, True]
+            ).drop(columns=["_free", "_name_key"]).reset_index(drop=True)
 
-        pivot = pivot.sort_values(
-            by=["_sort", "Product Name"],
-            ascending=[True, True]
-        ).drop(columns=["_sort"]).reset_index(drop=True)
+        # ========== 🆕 调整列顺序：库位放第一列，删去 SKU Prefix ==========
+        pivot = pivot[["库位", "Product Name", "S", "M", "L", "Total"]]
 
         # 📊 对账展示
         st.subheader("📦 对账结果")
@@ -229,21 +267,33 @@ if uploaded_file:
         else:
             st.error(f"❌ 不一致：PDF {expected_total} → 调整后 {expected_final}，实际 {total_qty}")
 
-        # 🌸 新款淡粉色高亮 + Free Giveaway 淡灰色
+        # 🆕 未识别库位提示
+        unknown_loc = pivot[pivot["库位"] == "未识别库位"]
+        if not unknown_loc.empty:
+            st.warning(f"⚠️ 有 {len(unknown_loc)} 个款式没有库位信息：{', '.join(unknown_loc['Product Name'].tolist())}")
+
+        # 🌸 行高亮
+        prefix_lookup = {}
+        for sku_p, name in updated_mapping.items():
+            prefix_lookup[name] = sku_p
+
         def highlight_row(row):
-            prefix = str(row["SKU Prefix"])
+            loc = str(row["库位"])
+            name = str(row["Product Name"])
+            prefix = prefix_lookup.get(name, "")
+            
+            if loc == "未识别库位":
+                return ['background-color: #ffd966'] * len(row)
+            if name == "Free Giveaway" or prefix == "NF001":
+                return ['background-color: #f0f0f0'] * len(row)
             if prefix in new_sku_prefix:
                 return ['background-color: #ffe4ec'] * len(row)
-            if prefix == "NF001":
-                return ['background-color: #f0f0f0'] * len(row)
             return [''] * len(row)
 
         pivot_styled = pivot.style.apply(highlight_row, axis=1)
 
-        # 明细表
         st.dataframe(pivot_styled, use_container_width=True)
 
-        # 下载（用 pivot 原始数据）
         csv = pivot.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 下载产品明细 CSV", data=csv, file_name="product_summary_named.csv", mime="text/csv")
 
