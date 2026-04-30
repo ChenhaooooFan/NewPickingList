@@ -76,7 +76,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ---------- 自定义 CSS(安全的酷炫效果版) ----------
+# ---------- 自定义 CSS ----------
 st.markdown("""
 <style>
     /* 隐藏默认元素 */
@@ -85,56 +85,20 @@ st.markdown("""
     .stDeployButton {display: none;}
     header[data-testid="stHeader"] {background: transparent;}
 
-    /* === 飘动的极光背景 === */
+    /* === 全局背景:奶油白 → 莓粉 渐变 === */
     .stApp {
-        background: #fdfafb;
-        position: relative;
-    }
-    .stApp::before {
-        content: '';
-        position: fixed;
-        top: -150px;
-        left: -100px;
-        width: 500px;
-        height: 500px;
-        border-radius: 50%;
-        background: radial-gradient(circle, rgba(255, 209, 220, 0.55) 0%, transparent 70%);
-        filter: blur(60px);
-        z-index: 0;
-        pointer-events: none;
-        animation: floatA 18s ease-in-out infinite;
-    }
-    .stApp::after {
-        content: '';
-        position: fixed;
-        bottom: -200px;
-        right: -150px;
-        width: 600px;
-        height: 600px;
-        border-radius: 50%;
-        background: radial-gradient(circle, rgba(252, 228, 236, 0.5) 0%, transparent 70%);
-        filter: blur(70px);
-        z-index: 0;
-        pointer-events: none;
-        animation: floatB 22s ease-in-out infinite;
-    }
-    @keyframes floatA {
-        0%, 100% { transform: translate(0, 0) scale(1); }
-        33%      { transform: translate(80px, 60px) scale(1.1); }
-        66%      { transform: translate(-40px, 100px) scale(0.95); }
-    }
-    @keyframes floatB {
-        0%, 100% { transform: translate(0, 0) scale(1); }
-        50%      { transform: translate(-100px, -80px) scale(1.15); }
+        background:
+            radial-gradient(circle at 0% 0%, #fff5f7 0%, transparent 50%),
+            radial-gradient(circle at 100% 0%, #fef0f5 0%, transparent 50%),
+            radial-gradient(circle at 50% 100%, #fdf3f8 0%, transparent 50%),
+            #fefcfb;
     }
 
-    /* === 主容器(浮在极光之上) === */
+    /* === 主容器 === */
     .block-container {
         padding-top: 2.5rem;
         padding-bottom: 4rem;
         max-width: 1180px;
-        position: relative;
-        z-index: 1;
     }
 
     /* === Hero 标题区 === */
@@ -144,56 +108,32 @@ st.markdown("""
         padding: 40px 48px;
         margin-bottom: 28px;
         box-shadow:
-            0 8px 32px rgba(232, 165, 180, 0.15),
+            0 4px 24px rgba(232, 165, 180, 0.12),
             0 1px 3px rgba(232, 165, 180, 0.08);
         border: 1px solid rgba(232, 165, 180, 0.18);
         position: relative;
         overflow: hidden;
     }
-    /* 呼吸光晕(纯 CSS 动画,安全) */
     .hero-wrap::before {
         content: '';
         position: absolute;
         top: -50%;
         right: -10%;
-        width: 350px;
-        height: 350px;
-        background: radial-gradient(circle, rgba(255, 180, 200, 0.4) 0%, transparent 70%);
+        width: 300px;
+        height: 300px;
+        background: radial-gradient(circle, rgba(255, 200, 215, 0.25) 0%, transparent 70%);
         pointer-events: none;
-        animation: breathe 6s ease-in-out infinite;
     }
-    .hero-wrap::after {
-        content: '';
-        position: absolute;
-        bottom: -40%;
-        left: -5%;
-        width: 280px;
-        height: 280px;
-        background: radial-gradient(circle, rgba(255, 220, 230, 0.35) 0%, transparent 70%);
-        pointer-events: none;
-        animation: breathe 8s ease-in-out infinite reverse;
-    }
-    @keyframes breathe {
-        0%, 100% { transform: scale(1); opacity: 0.6; }
-        50%      { transform: scale(1.15); opacity: 0.9; }
-    }
-
     .hero-title {
-        font-size: 36px;
+        font-size: 34px;
         font-weight: 700;
-        background: linear-gradient(135deg, #e89cb1 0%, #d4849a 30%, #c46e89 60%, #b85a78 100%);
-        background-size: 200% 200%;
+        background: linear-gradient(135deg, #d4849a 0%, #c46e89 50%, #b8859e 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
         margin: 0 0 8px 0;
         letter-spacing: -0.5px;
         position: relative;
-        animation: shimmer 4s ease-in-out infinite;
-    }
-    @keyframes shimmer {
-        0%, 100% { background-position: 0% 50%; }
-        50%      { background-position: 100% 50%; }
     }
     .hero-subtitle {
         font-size: 15px;
@@ -204,34 +144,16 @@ st.markdown("""
         position: relative;
     }
     .hero-tag {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
+        display: inline-block;
         background: linear-gradient(135deg, #fdd9e0 0%, #fce4ec 100%);
         color: #b85a78;
-        padding: 5px 14px;
+        padding: 4px 12px;
         border-radius: 12px;
         font-size: 11px;
         font-weight: 600;
         letter-spacing: 0.5px;
         margin-bottom: 14px;
         text-transform: uppercase;
-        position: relative;
-        box-shadow: 0 2px 8px rgba(212, 132, 154, 0.15);
-    }
-    .hero-tag::before {
-        content: '';
-        width: 6px;
-        height: 6px;
-        background: #d4849a;
-        border-radius: 50%;
-        box-shadow: 0 0 0 0 rgba(212, 132, 154, 0.7);
-        animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-        0%   { box-shadow: 0 0 0 0 rgba(212, 132, 154, 0.7); }
-        70%  { box-shadow: 0 0 0 8px rgba(212, 132, 154, 0); }
-        100% { box-shadow: 0 0 0 0 rgba(212, 132, 154, 0); }
     }
 
     /* === 卡片样式 === */
@@ -337,7 +259,7 @@ st.markdown("""
         background: #fef8f9;
     }
 
-    /* === KPI 数字卡(流光描边 + hover 升起) === */
+    /* === KPI 数字卡 === */
     .kpi-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -346,36 +268,15 @@ st.markdown("""
     }
     .kpi-card {
         background: white;
-        border-radius: 18px;
-        padding: 20px 22px;
-        border: 1px solid rgba(232, 165, 180, 0.15);
-        box-shadow: 0 4px 16px rgba(232, 165, 180, 0.08);
-        transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-        position: relative;
-        overflow: hidden;
-    }
-    /* 流光扫过(hover 触发) */
-    .kpi-card::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: -100%;
-        width: 60%;
-        height: 100%;
-        background: linear-gradient(90deg,
-            transparent 0%,
-            rgba(255, 255, 255, 0.6) 50%,
-            transparent 100%);
-        transition: left 0.7s ease;
-        pointer-events: none;
+        border-radius: 16px;
+        padding: 18px 22px;
+        border: 1px solid rgba(232, 165, 180, 0.12);
+        box-shadow: 0 2px 10px rgba(232, 165, 180, 0.06);
+        transition: all 0.2s ease;
     }
     .kpi-card:hover {
-        transform: translateY(-4px) scale(1.02);
-        box-shadow: 0 12px 28px rgba(232, 165, 180, 0.2);
-        border-color: rgba(212, 132, 154, 0.4);
-    }
-    .kpi-card:hover::after {
-        left: 130%;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(232, 165, 180, 0.14);
     }
     .kpi-label {
         font-size: 11px;
@@ -383,63 +284,30 @@ st.markdown("""
         text-transform: uppercase;
         letter-spacing: 1px;
         font-weight: 600;
-        margin-bottom: 8px;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-    .kpi-icon-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: currentColor;
-        opacity: 0.6;
+        margin-bottom: 6px;
     }
     .kpi-value {
-        font-size: 34px;
+        font-size: 30px;
         font-weight: 700;
-        background: linear-gradient(135deg, #6b4f55 0%, #b85a78 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+        color: #6b4f55;
         line-height: 1;
         margin-bottom: 4px;
-        letter-spacing: -0.8px;
+        letter-spacing: -0.5px;
     }
     .kpi-sub {
         font-size: 12px;
         color: #a8888a;
         font-weight: 400;
     }
-    .kpi-card.success {
-        border-left: 3px solid #a8d5ba;
-    }
-    .kpi-card.success .kpi-value {
-        background: linear-gradient(135deg, #4a8061 0%, #6bb88a 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-    .kpi-card.primary {
-        border-left: 3px solid #d4849a;
-    }
-    .kpi-card.primary .kpi-value {
-        background: linear-gradient(135deg, #b85a78 0%, #e89cb1 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-    .kpi-card.muted {
-        border-left: 3px solid #d4c5c0;
-    }
-    .kpi-card.warning {
-        border-left: 3px solid #e8c587;
-    }
-    .kpi-card.warning .kpi-value {
-        background: linear-gradient(135deg, #b58a3a 0%, #d4a956 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
+    .kpi-card.success { border-left: 4px solid #a8d5ba; }
+    .kpi-card.success .kpi-value { color: #4a8061; }
+    .kpi-card.primary { border-left: 4px solid #d4849a; }
+    .kpi-card.primary .kpi-value { color: #b85a78; }
+    .kpi-card.muted { border-left: 4px solid #d4c5c0; }
+    .kpi-card.warning { border-left: 4px solid #e8c587; }
+    .kpi-card.warning .kpi-value { color: #b58a3a; }
 
-    /* === 对账状态条(流光 + 图标动效) === */
+    /* === 对账状态条 === */
     .status-bar {
         border-radius: 16px;
         padding: 16px 22px;
@@ -449,52 +317,16 @@ st.markdown("""
         display: flex;
         align-items: center;
         gap: 12px;
-        position: relative;
-        overflow: hidden;
     }
     .status-bar.success {
         background: linear-gradient(135deg, #f0f9f3 0%, #e6f5ec 100%);
         color: #4a8061;
         border: 1px solid rgba(168, 213, 186, 0.4);
     }
-    /* 成功条:顶部流光 */
-    .status-bar.success::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: -100%;
-        width: 50%;
-        height: 100%;
-        background: linear-gradient(90deg,
-            transparent 0%,
-            rgba(168, 213, 186, 0.3) 50%,
-            transparent 100%);
-        animation: sweep 3s ease-in-out infinite;
-    }
-    @keyframes sweep {
-        0%   { left: -100%; }
-        100% { left: 200%; }
-    }
-    .status-bar.success .status-icon {
-        animation: bounceIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-    @keyframes bounceIn {
-        0%   { transform: scale(0.3); opacity: 0; }
-        50%  { transform: scale(1.2); }
-        100% { transform: scale(1); opacity: 1; }
-    }
     .status-bar.error {
         background: linear-gradient(135deg, #fef0f0 0%, #fde6e6 100%);
         color: #b85a5a;
         border: 1px solid rgba(232, 165, 165, 0.4);
-    }
-    .status-bar.error .status-icon {
-        animation: shake 0.5s ease-in-out;
-    }
-    @keyframes shake {
-        0%, 100% { transform: translateX(0); }
-        25%      { transform: translateX(-3px); }
-        75%      { transform: translateX(3px); }
     }
     .status-bar.warning {
         background: linear-gradient(135deg, #fef9ec 0%, #fdf3d9 100%);
@@ -503,9 +335,6 @@ st.markdown("""
     }
     .status-icon {
         font-size: 20px;
-        flex-shrink: 0;
-        position: relative;
-        z-index: 1;
     }
 
     /* === 明细块小标题 === */
@@ -547,6 +376,24 @@ st.markdown("""
         box-shadow: 0 2px 12px rgba(232, 165, 180, 0.06);
     }
 
+    /* === 下载按钮 === */
+    [data-testid="stDownloadButton"] button {
+        background: linear-gradient(135deg, #d4849a 0%, #c46e89 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 12px !important;
+        padding: 10px 24px !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        box-shadow: 0 3px 10px rgba(196, 110, 137, 0.25) !important;
+        transition: all 0.25s ease !important;
+        letter-spacing: 0.3px;
+    }
+    [data-testid="stDownloadButton"] button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(196, 110, 137, 0.35) !important;
+    }
+
     /* === Streamlit 默认 alert 美化兜底 === */
     [data-testid="stAlert"] {
         border-radius: 14px !important;
@@ -561,7 +408,7 @@ st.markdown("""
         border: none;
     }
 
-    /* === 段落小标题(发光光条) === */
+    /* === 段落小标题 === */
     .section-header {
         font-size: 18px;
         font-weight: 700;
@@ -574,42 +421,9 @@ st.markdown("""
     .section-header::before {
         content: '';
         width: 4px;
-        height: 20px;
-        background: linear-gradient(180deg, #e89cb1 0%, #d4849a 50%, #b85a78 100%);
+        height: 18px;
+        background: linear-gradient(180deg, #d4849a 0%, #c46e89 100%);
         border-radius: 2px;
-        box-shadow: 0 2px 8px rgba(212, 132, 154, 0.3);
-        animation: glowPulse 2.5s ease-in-out infinite;
-    }
-    @keyframes glowPulse {
-        0%, 100% { box-shadow: 0 2px 8px rgba(212, 132, 154, 0.3); }
-        50%      { box-shadow: 0 2px 16px rgba(212, 132, 154, 0.7); }
-    }
-
-    /* === 下载按钮(渐变流动 + hover 上浮) === */
-    [data-testid="stDownloadButton"] button {
-        background: linear-gradient(135deg, #e89cb1 0%, #d4849a 50%, #c46e89 100%) !important;
-        background-size: 200% 200% !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 14px !important;
-        padding: 12px 28px !important;
-        font-weight: 600 !important;
-        font-size: 14px !important;
-        box-shadow: 0 4px 14px rgba(196, 110, 137, 0.3) !important;
-        transition: all 0.3s ease !important;
-        letter-spacing: 0.3px;
-        animation: gradientShift 3s ease infinite;
-    }
-    @keyframes gradientShift {
-        0%, 100% { background-position: 0% 50%; }
-        50%      { background-position: 100% 50%; }
-    }
-    [data-testid="stDownloadButton"] button:hover {
-        transform: translateY(-3px) scale(1.02);
-        box-shadow: 0 10px 24px rgba(196, 110, 137, 0.4) !important;
-    }
-    [data-testid="stDownloadButton"] button:active {
-        transform: translateY(-1px) scale(0.98);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -984,23 +798,23 @@ else:
         st.markdown(f"""
         <div class="kpi-grid">
             <div class="kpi-card primary">
-                <div class="kpi-label"><span class="kpi-icon-dot"></span>PDF 标注</div>
-                <div class="kpi-value">{expected_total:,}</div>
+                <div class="kpi-label">PDF 标注</div>
+                <div class="kpi-value">{expected_total}</div>
                 <div class="kpi-sub">Item quantity</div>
             </div>
             <div class="kpi-card success">
-                <div class="kpi-label"><span class="kpi-icon-dot"></span>实际提取</div>
-                <div class="kpi-value">{total_qty:,}</div>
+                <div class="kpi-label">实际提取</div>
+                <div class="kpi-value">{total_qty}</div>
                 <div class="kpi-sub">含 bundle 拆分</div>
             </div>
             <div class="kpi-card">
-                <div class="kpi-label"><span class="kpi-icon-dot"></span>普通甲片</div>
-                <div class="kpi-value">{nail_qty:,}</div>
+                <div class="kpi-label">普通甲片</div>
+                <div class="kpi-value">{nail_qty}</div>
                 <div class="kpi-sub">有库位</div>
             </div>
             <div class="kpi-card muted">
-                <div class="kpi-label"><span class="kpi-icon-dot"></span>特殊款</div>
-                <div class="kpi-value">{special_qty:,}</div>
+                <div class="kpi-label">特殊款</div>
+                <div class="kpi-value">{special_qty}</div>
                 <div class="kpi-sub">无尺寸/无库位</div>
             </div>
         </div>
