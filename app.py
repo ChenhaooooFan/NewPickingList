@@ -1,3 +1,65 @@
+"""
+================================================================================
+NailVesta 拣货单汇总工具
+================================================================================
+
+【用途】
+将 TikTok Shop 导出的"拣货单 PDF"解析为按库位排序的产品汇总表,
+方便仓库同学按动线顺序一次性拣完所有订单,并自动核对 PDF 标注的总件数
+与实际提取件数是否一致。
+
+【输入】
+1. 必选:拣货 PDF(TikTok Shop 后台导出)
+   - PDF 头部含 "Item quantity: XXX",作为对账基准
+   - 每行 SKU 形如 NPF014-M、NDJ002-S
+   - bundle 形式 SKU 形如 NPF014NPJ016-M(多个 SKU 拼接 + 单个尺寸)
+2. 可选:产品图册 CSV(含 SKU / 库位 两列)
+   - 上传后会自动按库位 A-01-01 → B-XX-XX 的顺序排序
+
+【输出】
+- 屏幕上的对账面板(PDF 标注 vs 实际提取)
+- 按库位/字母排序的产品明细表(库位、产品名、S/M/L、Total)
+- 可下载的 CSV 文件
+
+【对账逻辑(核心)】
+PDF 头部的 Item quantity 把所有"行"都算一份,但实际拣货时:
+1. bundle SKU(如 NPF014NPJ016-M qty=1)在 PDF 里算 1 件,
+   但实际要拣 2 件 → bundle_extra 记录拆分多出来的件数
+2. NF001 (Free Giveaway) 是免费赠品,无尺寸,PDF 里独立成行
+3. NB001 (Organizer Binder) 是收纳册,无尺寸,PDF 里独立成行
+4. "Choose N Sets" 段落用占位 SKU(1/2/3),无具体款式信息,
+   只能按段落汇总成一行"混合套装"
+
+最终对账公式:
+    期望件数 = PDF 标注数量 + bundle 拆分多出件数
+    实际件数 = 所有提取出的 SKU 件数总和(含 NF001 / NB001 / Choose Sets)
+    两者应相等
+
+【特殊 SKU 处理】
+| SKU       | 名称              | 尺寸  | 库位      | 处理方式            |
+|-----------|------------------|------|----------|--------------------|
+| NF001     | Free Giveaway    | 无   | 无       | 独立成行,灰色背景  |
+| NB001     | Organizer Binder | 无   | 无       | 独立成行,灰色背景  |
+| 1/2/3...  | Choose N Sets    | 无   | 无       | 段落汇总,灰色背景  |
+
+【表格颜色含义】
+- 🟡 黄色:真正缺库位信息,需补充图册 CSV
+- ⚫ 灰色:无尺寸/无库位的特殊款(NF001 / NB001 / Choose Sets)
+- 🌸 粉色:近期新款 SKU(在 new_sku_prefix 列表中)
+- 白色:正常款
+
+【依赖】
+streamlit, pandas, pymupdf (fitz)
+
+【维护】⚠️ 重要:有新款上架时,请记得更新 GitHub 代码中的 SKU 对照表!
+- 新增甲片款式 → 在 sku_prefix_to_name 加一行映射
+- 新增近期新款 → 同时加入 new_sku_prefix(用于粉色标记)
+- 新增无尺寸 SKU → 同时加入 sku_prefix_to_name 和 SIZELESS_SKUS,
+  并增加对应的正则匹配(参考 NB_ONLY 的写法)
+- 改完后务必 push 到 GitHub,否则线上工具仍是旧版,会出现"❓未识别"
+================================================================================
+"""
+
 import streamlit as st
 import pandas as pd
 import re
@@ -7,6 +69,13 @@ from collections import defaultdict
 st.set_page_config(page_title="拣货单汇总工具(´∀｀)♡", layout="centered")
 st.title("NailVesta 拣货单汇总工具💗")
 st.caption("提取 Seller SKU + 数量,并根据 SKU 前缀映射产品名称(支持 bundle、Mystery、Organizer 与 Choose 2 Sets 对账规则)")
+
+# ========== 维护提示 ==========
+st.info(
+    "📢 **新款上架提醒**:有新款 SKU 上架时,请记得更新 GitHub 代码中的对照表"
+    "(`sku_prefix_to_name` 和 `new_sku_prefix`),否则新款会显示为 ❓未识别。"
+    "改完别忘了 push 到 GitHub,线上版本才会同步生效~"
+)
 
 # ========== 库位映射配置 ==========
 catalog_file = st.file_uploader(
@@ -351,6 +420,25 @@ if uploaded_file:
         else:
             diff = total_qty - expected_with_bundle
             st.error(f"❌ 不一致:期望 {expected_with_bundle},实际 {total_qty},差 {diff:+d} 件")
+
+        # 🆕 未识别 SKU 提示(优先级最高,提醒及时更新代码)
+        unknown_sku = pivot[pivot["Product Name"] == "❓未识别"]
+        if not unknown_sku.empty:
+            unknown_prefixes = unknown_sku["库位"].tolist()  # 这里其实没有库位,后面会读 SKU
+            # 直接从 sku_counts 反查 prefix
+            unknown_prefix_list = []
+            for sku in sku_counts.keys():
+                prefix = sku.split("-")[0] if "-" in sku else sku
+                if prefix not in updated_mapping and prefix != "__CHOOSE_SETS__":
+                    if prefix not in unknown_prefix_list:
+                        unknown_prefix_list.append(prefix)
+            st.error(
+                f"🚨 **发现 {len(unknown_prefix_list)} 个未识别的 SKU 前缀**:"
+                f"`{', '.join(unknown_prefix_list)}`\n\n"
+                f"👉 这些 SKU 不在代码的对照表里,请尽快在 GitHub 仓库中更新 "
+                f"`sku_prefix_to_name`(以及如果是新款,同时加入 `new_sku_prefix`),"
+                f"push 后重新部署,否则新款将无法正确显示产品名。"
+            )
 
         # 未识别库位提示
         truly_unknown = pivot[pivot["库位"] == "未识别库位"]
