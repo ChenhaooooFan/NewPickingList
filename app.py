@@ -76,7 +76,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ---------- 自定义 CSS(Glassmorphism + 动效升级版)----------
+# ---------- 自定义 CSS(安全的酷炫效果版) ----------
 st.markdown("""
 <style>
     /* 隐藏默认元素 */
@@ -89,31 +89,33 @@ st.markdown("""
     .stApp {
         background: #fdfafb;
         position: relative;
-        overflow: hidden;
-    }
-    .stApp::before, .stApp::after {
-        content: '';
-        position: fixed;
-        border-radius: 50%;
-        filter: blur(80px);
-        opacity: 0.55;
-        z-index: 0;
-        pointer-events: none;
     }
     .stApp::before {
-        width: 500px;
-        height: 500px;
-        background: radial-gradient(circle, #ffd1dc 0%, transparent 70%);
+        content: '';
+        position: fixed;
         top: -150px;
         left: -100px;
+        width: 500px;
+        height: 500px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(255, 209, 220, 0.55) 0%, transparent 70%);
+        filter: blur(60px);
+        z-index: 0;
+        pointer-events: none;
         animation: floatA 18s ease-in-out infinite;
     }
     .stApp::after {
-        width: 600px;
-        height: 600px;
-        background: radial-gradient(circle, #fce4ec 0%, transparent 70%);
+        content: '';
+        position: fixed;
         bottom: -200px;
         right: -150px;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(252, 228, 236, 0.5) 0%, transparent 70%);
+        filter: blur(70px);
+        z-index: 0;
+        pointer-events: none;
         animation: floatB 22s ease-in-out infinite;
     }
     @keyframes floatA {
@@ -126,7 +128,7 @@ st.markdown("""
         50%      { transform: translate(-100px, -80px) scale(1.15); }
     }
 
-    /* 让所有内容浮在极光之上 */
+    /* === 主容器(浮在极光之上) === */
     .block-container {
         padding-top: 2.5rem;
         padding-bottom: 4rem;
@@ -135,23 +137,20 @@ st.markdown("""
         z-index: 1;
     }
 
-    /* === Hero 标题区:呼吸光晕 + 玻璃效果 === */
+    /* === Hero 标题区 === */
     .hero-wrap {
-        background: rgba(255, 255, 255, 0.65);
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        background: linear-gradient(135deg, #ffffff 0%, #fff8f5 50%, #fef2f5 100%);
         border-radius: 28px;
         padding: 40px 48px;
         margin-bottom: 28px;
         box-shadow:
             0 8px 32px rgba(232, 165, 180, 0.15),
-            0 1px 3px rgba(232, 165, 180, 0.08),
-            inset 0 1px 0 rgba(255, 255, 255, 0.6);
-        border: 1px solid rgba(232, 165, 180, 0.25);
+            0 1px 3px rgba(232, 165, 180, 0.08);
+        border: 1px solid rgba(232, 165, 180, 0.18);
         position: relative;
         overflow: hidden;
     }
-    /* 呼吸光晕 */
+    /* 呼吸光晕(纯 CSS 动画,安全) */
     .hero-wrap::before {
         content: '';
         position: absolute;
@@ -220,7 +219,6 @@ st.markdown("""
         position: relative;
         box-shadow: 0 2px 8px rgba(212, 132, 154, 0.15);
     }
-    /* Tag 内的脉冲小点 */
     .hero-tag::before {
         content: '';
         width: 6px;
@@ -339,7 +337,7 @@ st.markdown("""
         background: #fef8f9;
     }
 
-    /* === KPI 数字卡(玻璃拟态 + 流光) === */
+    /* === KPI 数字卡(流光描边 + hover 升起) === */
     .kpi-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -347,40 +345,36 @@ st.markdown("""
         margin-bottom: 20px;
     }
     .kpi-card {
-        background: rgba(255, 255, 255, 0.7);
-        backdrop-filter: blur(16px) saturate(180%);
-        -webkit-backdrop-filter: blur(16px) saturate(180%);
+        background: white;
         border-radius: 18px;
         padding: 20px 22px;
-        border: 1px solid rgba(232, 165, 180, 0.18);
-        box-shadow:
-            0 4px 16px rgba(232, 165, 180, 0.08),
-            inset 0 1px 0 rgba(255, 255, 255, 0.6);
+        border: 1px solid rgba(232, 165, 180, 0.15);
+        box-shadow: 0 4px 16px rgba(232, 165, 180, 0.08);
         transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
         position: relative;
         overflow: hidden;
     }
-    /* 流光扫过 */
-    .kpi-card::before {
+    /* 流光扫过(hover 触发) */
+    .kpi-card::after {
         content: '';
         position: absolute;
-        top: 0; left: -100%;
+        top: 0;
+        left: -100%;
         width: 60%;
         height: 100%;
         background: linear-gradient(90deg,
             transparent 0%,
-            rgba(255, 255, 255, 0.5) 50%,
+            rgba(255, 255, 255, 0.6) 50%,
             transparent 100%);
         transition: left 0.7s ease;
+        pointer-events: none;
     }
     .kpi-card:hover {
         transform: translateY(-4px) scale(1.02);
-        box-shadow:
-            0 12px 28px rgba(232, 165, 180, 0.2),
-            inset 0 1px 0 rgba(255, 255, 255, 0.8);
+        box-shadow: 0 12px 28px rgba(232, 165, 180, 0.2);
         border-color: rgba(212, 132, 154, 0.4);
     }
-    .kpi-card:hover::before {
+    .kpi-card:hover::after {
         left: 130%;
     }
     .kpi-label {
@@ -394,6 +388,13 @@ st.markdown("""
         align-items: center;
         gap: 6px;
     }
+    .kpi-icon-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: currentColor;
+        opacity: 0.6;
+    }
     .kpi-value {
         font-size: 34px;
         font-weight: 700;
@@ -404,7 +405,6 @@ st.markdown("""
         line-height: 1;
         margin-bottom: 4px;
         letter-spacing: -0.8px;
-        font-feature-settings: "tnum";
     }
     .kpi-sub {
         font-size: 12px;
@@ -438,16 +438,8 @@ st.markdown("""
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
     }
-    /* KPI 卡左上小图标点 */
-    .kpi-icon-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: currentColor;
-        opacity: 0.6;
-    }
 
-    /* === 对账状态条(流光描边动效) === */
+    /* === 对账状态条(流光 + 图标动效) === */
     .status-bar {
         border-radius: 16px;
         padding: 16px 22px;
@@ -460,37 +452,37 @@ st.markdown("""
         position: relative;
         overflow: hidden;
     }
-    /* 成功状态:流光描边 */
     .status-bar.success {
         background: linear-gradient(135deg, #f0f9f3 0%, #e6f5ec 100%);
         color: #4a8061;
         border: 1px solid rgba(168, 213, 186, 0.4);
     }
+    /* 成功条:顶部流光 */
     .status-bar.success::before {
         content: '';
         position: absolute;
-        inset: -1px;
-        border-radius: 16px;
-        padding: 1.5px;
+        top: 0;
+        left: -100%;
+        width: 50%;
+        height: 100%;
         background: linear-gradient(90deg,
             transparent 0%,
-            #6bb88a 30%,
-            #a8d5ba 50%,
-            #6bb88a 70%,
+            rgba(168, 213, 186, 0.3) 50%,
             transparent 100%);
-        background-size: 200% 100%;
-        -webkit-mask: linear-gradient(#fff 0 0) content-box,
-                      linear-gradient(#fff 0 0);
-        -webkit-mask-composite: xor;
-                mask-composite: exclude;
-        animation: borderFlow 3s linear infinite;
-        pointer-events: none;
+        animation: sweep 3s ease-in-out infinite;
     }
-    @keyframes borderFlow {
-        0%   { background-position: 200% 0%; }
-        100% { background-position: -200% 0%; }
+    @keyframes sweep {
+        0%   { left: -100%; }
+        100% { left: 200%; }
     }
-
+    .status-bar.success .status-icon {
+        animation: bounceIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    @keyframes bounceIn {
+        0%   { transform: scale(0.3); opacity: 0; }
+        50%  { transform: scale(1.2); }
+        100% { transform: scale(1); opacity: 1; }
+    }
     .status-bar.error {
         background: linear-gradient(135deg, #fef0f0 0%, #fde6e6 100%);
         color: #b85a5a;
@@ -504,7 +496,6 @@ st.markdown("""
         25%      { transform: translateX(-3px); }
         75%      { transform: translateX(3px); }
     }
-
     .status-bar.warning {
         background: linear-gradient(135deg, #fef9ec 0%, #fdf3d9 100%);
         color: #8a6a2a;
@@ -513,14 +504,8 @@ st.markdown("""
     .status-icon {
         font-size: 20px;
         flex-shrink: 0;
-    }
-    .status-bar.success .status-icon {
-        animation: bounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-    @keyframes bounce {
-        0%   { transform: scale(0.3); opacity: 0; }
-        50%  { transform: scale(1.2); opacity: 1; }
-        100% { transform: scale(1); }
+        position: relative;
+        z-index: 1;
     }
 
     /* === 明细块小标题 === */
@@ -562,39 +547,6 @@ st.markdown("""
         box-shadow: 0 2px 12px rgba(232, 165, 180, 0.06);
     }
 
-    /* === 下载按钮(流光 + 渐变) === */
-    [data-testid="stDownloadButton"] button {
-        background: linear-gradient(135deg, #e89cb1 0%, #d4849a 50%, #c46e89 100%) !important;
-        background-size: 200% 200% !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 14px !important;
-        padding: 12px 28px !important;
-        font-weight: 600 !important;
-        font-size: 14px !important;
-        box-shadow:
-            0 4px 14px rgba(196, 110, 137, 0.3),
-            inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
-        transition: all 0.3s ease !important;
-        letter-spacing: 0.3px;
-        position: relative;
-        overflow: hidden;
-        animation: gradientShift 3s ease infinite;
-    }
-    @keyframes gradientShift {
-        0%, 100% { background-position: 0% 50%; }
-        50%      { background-position: 100% 50%; }
-    }
-    [data-testid="stDownloadButton"] button:hover {
-        transform: translateY(-3px) scale(1.02);
-        box-shadow:
-            0 10px 24px rgba(196, 110, 137, 0.4),
-            inset 0 1px 0 rgba(255, 255, 255, 0.4) !important;
-    }
-    [data-testid="stDownloadButton"] button:active {
-        transform: translateY(-1px) scale(0.98);
-    }
-
     /* === Streamlit 默认 alert 美化兜底 === */
     [data-testid="stAlert"] {
         border-radius: 14px !important;
@@ -609,7 +561,7 @@ st.markdown("""
         border: none;
     }
 
-    /* === 段落小标题(动态光条) === */
+    /* === 段落小标题(发光光条) === */
     .section-header {
         font-size: 18px;
         font-weight: 700;
@@ -618,7 +570,6 @@ st.markdown("""
         display: flex;
         align-items: center;
         gap: 10px;
-        position: relative;
     }
     .section-header::before {
         content: '';
@@ -627,11 +578,38 @@ st.markdown("""
         background: linear-gradient(180deg, #e89cb1 0%, #d4849a 50%, #b85a78 100%);
         border-radius: 2px;
         box-shadow: 0 2px 8px rgba(212, 132, 154, 0.3);
-        animation: glow 2.5s ease-in-out infinite;
+        animation: glowPulse 2.5s ease-in-out infinite;
     }
-    @keyframes glow {
+    @keyframes glowPulse {
         0%, 100% { box-shadow: 0 2px 8px rgba(212, 132, 154, 0.3); }
-        50%      { box-shadow: 0 2px 16px rgba(212, 132, 154, 0.6); }
+        50%      { box-shadow: 0 2px 16px rgba(212, 132, 154, 0.7); }
+    }
+
+    /* === 下载按钮(渐变流动 + hover 上浮) === */
+    [data-testid="stDownloadButton"] button {
+        background: linear-gradient(135deg, #e89cb1 0%, #d4849a 50%, #c46e89 100%) !important;
+        background-size: 200% 200% !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 14px !important;
+        padding: 12px 28px !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        box-shadow: 0 4px 14px rgba(196, 110, 137, 0.3) !important;
+        transition: all 0.3s ease !important;
+        letter-spacing: 0.3px;
+        animation: gradientShift 3s ease infinite;
+    }
+    @keyframes gradientShift {
+        0%, 100% { background-position: 0% 50%; }
+        50%      { background-position: 100% 50%; }
+    }
+    [data-testid="stDownloadButton"] button:hover {
+        transform: translateY(-3px) scale(1.02);
+        box-shadow: 0 10px 24px rgba(196, 110, 137, 0.4) !important;
+    }
+    [data-testid="stDownloadButton"] button:active {
+        transform: translateY(-1px) scale(0.98);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -976,101 +954,6 @@ else:
         special_qty = int(pivot[pivot["库位"].str.startswith("无库位")]["Total"].sum()) \
                       if not pivot.empty else 0
 
-        # 🆕 对账进度环(超酷 SVG 圆环动画)
-        if expected_total > 0:
-            match_rate = min(100, int(total_qty / expected_with_bundle * 100)) if expected_with_bundle else 0
-            ring_color = "#6bb88a" if match_rate == 100 else ("#e89cb1" if match_rate >= 95 else "#e8a5a5")
-            ring_bg = "#f0f9f3" if match_rate == 100 else ("#fef0f5" if match_rate >= 95 else "#fef0f0")
-            # 圆周长 = 2πr,r=52
-            circ = 326.7
-            offset = circ * (1 - match_rate / 100)
-            st.markdown(f"""
-            <div style="display:flex; gap:24px; align-items:center; margin-bottom:18px;
-                        padding: 22px 28px; background: rgba(255,255,255,0.7);
-                        backdrop-filter: blur(16px); border-radius: 20px;
-                        border: 1px solid rgba(232, 165, 180, 0.18);
-                        box-shadow: 0 4px 16px rgba(232, 165, 180, 0.08);">
-                <div style="position:relative; width:120px; height:120px; flex-shrink:0;">
-                    <svg width="120" height="120" viewBox="0 0 120 120" style="transform: rotate(-90deg);">
-                        <defs>
-                            <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stop-color="#e89cb1"/>
-                                <stop offset="50%" stop-color="#d4849a"/>
-                                <stop offset="100%" stop-color="#b85a78"/>
-                            </linearGradient>
-                            <linearGradient id="ringGradOk" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stop-color="#6bb88a"/>
-                                <stop offset="100%" stop-color="#4a8061"/>
-                            </linearGradient>
-                        </defs>
-                        <circle cx="60" cy="60" r="52" fill="none"
-                                stroke="{ring_bg}" stroke-width="10"/>
-                        <circle cx="60" cy="60" r="52" fill="none"
-                                stroke="url(#{('ringGradOk' if match_rate == 100 else 'ringGrad')})"
-                                stroke-width="10"
-                                stroke-linecap="round"
-                                stroke-dasharray="{circ}"
-                                stroke-dashoffset="{circ}"
-                                style="animation: ringFill 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-                                       animation-delay: 0.2s;
-                                       --target-offset: {offset};">
-                        </circle>
-                    </svg>
-                    <div style="position:absolute; inset:0; display:flex; flex-direction:column;
-                                align-items:center; justify-content:center;">
-                        <div style="font-size:26px; font-weight:700;
-                                    background: linear-gradient(135deg, {ring_color} 0%, #6b4f55 100%);
-                                    -webkit-background-clip: text;
-                                    -webkit-text-fill-color: transparent;
-                                    background-clip: text;
-                                    letter-spacing: -0.5px;
-                                    font-feature-settings: 'tnum';"
-                             class="ring-pct" data-target="{match_rate}">0%</div>
-                        <div style="font-size:10px; color:#a8888a; text-transform:uppercase;
-                                    letter-spacing:1px; font-weight:600; margin-top:2px;">
-                            Match Rate
-                        </div>
-                    </div>
-                </div>
-                <div style="flex:1;">
-                    <div style="font-size:13px; color:#8a7170; margin-bottom:4px;
-                                text-transform:uppercase; letter-spacing:0.8px; font-weight:600;">
-                        对账完成度
-                    </div>
-                    <div style="font-size:18px; color:#6b4f55; font-weight:600; margin-bottom:6px;">
-                        {('🎉 完美对账' if match_rate == 100 else ('⚡ 接近一致' if match_rate >= 95 else '⚠️ 偏差较大'))}
-                    </div>
-                    <div style="font-size:13px; color:#a8888a; line-height:1.6;">
-                        PDF 标注 <strong style="color:#b85a78;">{expected_total}</strong>
-                        {' + bundle 拆分 <strong>' + str(bundle_extra) + '</strong>' if bundle_extra else ''}
-                        ,实际提取 <strong style="color:#b85a78;">{total_qty}</strong> 件
-                    </div>
-                </div>
-            </div>
-            <style>
-                @keyframes ringFill {{
-                    to {{ stroke-dashoffset: var(--target-offset); }}
-                }}
-            </style>
-            <script>
-            (function() {{
-                const el = document.querySelector('.ring-pct');
-                if (!el) return;
-                const target = parseInt(el.dataset.target) || 0;
-                const duration = 1500;
-                const start = performance.now();
-                function tick(now) {{
-                    const p = Math.min((now - start) / duration, 1);
-                    const eased = 1 - Math.pow(1 - p, 3);
-                    el.textContent = Math.floor(target * eased) + '%';
-                    if (p < 1) requestAnimationFrame(tick);
-                    else el.textContent = target + '%';
-                }}
-                setTimeout(() => requestAnimationFrame(tick), 200);
-            }})();
-            </script>
-            """, unsafe_allow_html=True)
-
         # 状态条
         if expected_total == 0:
             st.markdown("""
@@ -1097,54 +980,30 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-        # KPI 数字卡(数字滚动动画)
+        # KPI 数字卡
         st.markdown(f"""
         <div class="kpi-grid">
             <div class="kpi-card primary">
                 <div class="kpi-label"><span class="kpi-icon-dot"></span>PDF 标注</div>
-                <div class="kpi-value count-up" data-target="{expected_total}">0</div>
+                <div class="kpi-value">{expected_total:,}</div>
                 <div class="kpi-sub">Item quantity</div>
             </div>
             <div class="kpi-card success">
                 <div class="kpi-label"><span class="kpi-icon-dot"></span>实际提取</div>
-                <div class="kpi-value count-up" data-target="{total_qty}">0</div>
+                <div class="kpi-value">{total_qty:,}</div>
                 <div class="kpi-sub">含 bundle 拆分</div>
             </div>
             <div class="kpi-card">
                 <div class="kpi-label"><span class="kpi-icon-dot"></span>普通甲片</div>
-                <div class="kpi-value count-up" data-target="{nail_qty}">0</div>
+                <div class="kpi-value">{nail_qty:,}</div>
                 <div class="kpi-sub">有库位</div>
             </div>
             <div class="kpi-card muted">
                 <div class="kpi-label"><span class="kpi-icon-dot"></span>特殊款</div>
-                <div class="kpi-value count-up" data-target="{special_qty}">0</div>
+                <div class="kpi-value">{special_qty:,}</div>
                 <div class="kpi-sub">无尺寸/无库位</div>
             </div>
         </div>
-        <script>
-        (function() {{
-            // 数字滚动动画(easeOutExpo)
-            function animateCountUp(el) {{
-                const target = parseInt(el.dataset.target) || 0;
-                const duration = 1200;
-                const startTime = performance.now();
-                function tick(now) {{
-                    const elapsed = now - startTime;
-                    const progress = Math.min(elapsed / duration, 1);
-                    // easeOutExpo
-                    const eased = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
-                    el.textContent = Math.floor(target * eased).toLocaleString();
-                    if (progress < 1) requestAnimationFrame(tick);
-                    else el.textContent = target.toLocaleString();
-                }}
-                requestAnimationFrame(tick);
-            }}
-            // 等 DOM 就绪后启动
-            setTimeout(() => {{
-                document.querySelectorAll('.count-up').forEach(animateCountUp);
-            }}, 100);
-        }})();
-        </script>
         """, unsafe_allow_html=True)
 
         # 提取明细卡
