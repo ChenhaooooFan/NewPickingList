@@ -35,14 +35,28 @@ PDF 头部的 Item quantity 把所有"行"都算一份,但实际拣货时:
     实际件数 = 所有提取出的 SKU 件数总和(含 NF001 / NB001 / Choose Sets)
     两者应相等
 
+【特殊 SKU 处理】
+| SKU       | 名称              | 尺寸  | 库位      | 处理方式            |
+|-----------|------------------|------|----------|--------------------|
+| NF001     | Free Giveaway    | 无   | 无       | 独立成行,灰色背景  |
+| NB001     | Organizer Binder | 无   | 无       | 独立成行,灰色背景  |
+| 1/2/3...  | Choose N Sets    | 无   | 无       | 段落汇总,灰色背景  |
+
+【表格颜色含义】
+- 🟡 黄色:真正缺库位信息,需补充图册 CSV
+- ⚫ 灰色:无尺寸/无库位的特殊款(NF001 / NB001 / Choose Sets)
+- 🌸 粉色:近期新款 SKU(在 new_sku_prefix 列表中)
+- 白色:正常款
+
 【依赖】
 streamlit, pandas, pymupdf (fitz)
 
 【维护】⚠️ 重要:有新款上架时,请记得更新 GitHub 代码中的 SKU 对照表!
 - 新增甲片款式 → 在 sku_prefix_to_name 加一行映射
-- 新增近期新款 → 同时加入 new_sku_prefix(用于浅色标记)
-- 新增无尺寸 SKU → 同时加入 sku_prefix_to_name 和 SIZELESS_SKUS
-- 改完后务必 push 到 GitHub,否则线上工具仍是旧版,会出现"未识别"
+- 新增近期新款 → 同时加入 new_sku_prefix(用于粉色标记)
+- 新增无尺寸 SKU → 同时加入 sku_prefix_to_name 和 SIZELESS_SKUS,
+  并增加对应的正则匹配(参考 NB_ONLY 的写法)
+- 改完后务必 push 到 GitHub,否则线上工具仍是旧版,会出现"❓未识别"
 ================================================================================
 """
 
@@ -56,478 +70,398 @@ from collections import defaultdict
 # 页面配置 + 全局样式
 # ============================================================================
 st.set_page_config(
-    page_title="NailVesta · Picking",
-    page_icon="◆",
+    page_title="NailVesta 拣货单工具",
+    page_icon="💅",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# ---------- 现代极简风 CSS(Linear / Notion / Stripe 调性) ----------
+# ---------- 自定义 CSS ----------
 st.markdown("""
 <style>
-    /* === 隐藏默认元素 === */
+    /* 隐藏默认元素 */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     .stDeployButton {display: none;}
-    header[data-testid="stHeader"] {background: transparent; height: 0;}
+    header[data-testid="stHeader"] {background: transparent;}
 
-    /* === 全局字体 === */
-    html, body, [class*="css"] {
-        font-family: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Display",
-                     "PingFang SC", "Microsoft YaHei", sans-serif;
-        -webkit-font-smoothing: antialiased;
-        letter-spacing: -0.01em;
-    }
-
-    /* === 整体背景:中性灰白 === */
+    /* === 全局背景:奶油白 → 莓粉 渐变 === */
     .stApp {
-        background: #fafafa;
+        background:
+            radial-gradient(circle at 0% 0%, #fff5f7 0%, transparent 50%),
+            radial-gradient(circle at 100% 0%, #fef0f5 0%, transparent 50%),
+            radial-gradient(circle at 50% 100%, #fdf3f8 0%, transparent 50%),
+            #fefcfb;
     }
 
     /* === 主容器 === */
     .block-container {
-        padding-top: 3rem;
-        padding-bottom: 5rem;
-        max-width: 980px;
+        padding-top: 2.5rem;
+        padding-bottom: 4rem;
+        max-width: 1180px;
     }
 
-    /* === Header === */
-    .nv-header {
-        margin-bottom: 40px;
-        padding-bottom: 24px;
-        border-bottom: 1px solid #ececec;
+    /* === Hero 标题区 === */
+    .hero-wrap {
+        background: linear-gradient(135deg, #ffffff 0%, #fff8f5 50%, #fef2f5 100%);
+        border-radius: 28px;
+        padding: 40px 48px;
+        margin-bottom: 28px;
+        box-shadow:
+            0 4px 24px rgba(232, 165, 180, 0.12),
+            0 1px 3px rgba(232, 165, 180, 0.08);
+        border: 1px solid rgba(232, 165, 180, 0.18);
+        position: relative;
+        overflow: hidden;
     }
-    .nv-eyebrow {
-        font-size: 11px;
-        font-weight: 600;
-        color: #999;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        margin-bottom: 8px;
+    .hero-wrap::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -10%;
+        width: 300px;
+        height: 300px;
+        background: radial-gradient(circle, rgba(255, 200, 215, 0.25) 0%, transparent 70%);
+        pointer-events: none;
     }
-    .nv-title {
-        font-size: 28px;
-        font-weight: 600;
-        color: #0a0a0a;
-        margin: 0 0 6px 0;
-        letter-spacing: -0.02em;
+    .hero-title {
+        font-size: 34px;
+        font-weight: 700;
+        background: linear-gradient(135deg, #d4849a 0%, #c46e89 50%, #b8859e 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin: 0 0 8px 0;
+        letter-spacing: -0.5px;
+        position: relative;
     }
-    .nv-subtitle {
-        font-size: 14px;
-        color: #707070;
+    .hero-subtitle {
+        font-size: 15px;
+        color: #8a7170;
         margin: 0;
         font-weight: 400;
+        letter-spacing: 0.2px;
+        position: relative;
+    }
+    .hero-tag {
+        display: inline-block;
+        background: linear-gradient(135deg, #fdd9e0 0%, #fce4ec 100%);
+        color: #b85a78;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        margin-bottom: 14px;
+        text-transform: uppercase;
     }
 
-    /* === Section 标题 === */
-    .nv-section {
-        font-size: 13px;
+    /* === 卡片样式 === */
+    .nv-card {
+        background: white;
+        border-radius: 20px;
+        padding: 24px 28px;
+        margin-bottom: 18px;
+        box-shadow: 0 2px 12px rgba(232, 165, 180, 0.08);
+        border: 1px solid rgba(232, 165, 180, 0.12);
+    }
+    .nv-card-title {
+        font-size: 15px;
         font-weight: 600;
-        color: #0a0a0a;
-        margin: 36px 0 14px 0;
-        letter-spacing: -0.01em;
+        color: #6b4f55;
+        margin: 0 0 14px 0;
+        letter-spacing: 0.2px;
         display: flex;
         align-items: center;
         gap: 8px;
     }
-    .nv-section-count {
-        font-size: 12px;
-        color: #999;
-        font-weight: 400;
-        margin-left: 6px;
-    }
 
-    /* === 提醒条:克制、单色边框 === */
-    .nv-reminder {
-        background: #fafafa;
-        border: 1px solid #ececec;
-        border-radius: 8px;
-        padding: 12px 16px;
-        margin-bottom: 28px;
+    /* === 维护提醒条 === */
+    .reminder-bar {
+        background: linear-gradient(90deg, #fef5e7 0%, #fef0f0 100%);
+        border-left: 4px solid #e8a5a5;
+        border-radius: 12px;
+        padding: 12px 18px;
+        margin-bottom: 22px;
         font-size: 13px;
-        color: #555;
+        color: #7a5a5e;
         line-height: 1.6;
         display: flex;
         align-items: center;
         gap: 10px;
     }
-    .nv-reminder-dot {
-        width: 6px;
-        height: 6px;
-        background: #999;
-        border-radius: 50%;
-        flex-shrink: 0;
-    }
-    .nv-reminder code {
-        background: #f0f0f0;
-        color: #333;
-        padding: 1px 6px;
-        border-radius: 4px;
+    .reminder-bar code {
+        background: rgba(212, 132, 154, 0.12);
+        color: #b85a78;
+        padding: 1px 7px;
+        border-radius: 5px;
         font-size: 12px;
-        font-family: "SF Mono", "Monaco", "Menlo", monospace;
+        font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
     }
 
-    /* === 文件上传:克制 === */
+    /* === 文件上传区美化 === */
     [data-testid="stFileUploader"] {
-        background: transparent;
+        background: linear-gradient(135deg, #ffffff 0%, #fef8f9 100%);
+        border-radius: 16px;
+        padding: 4px;
     }
     [data-testid="stFileUploader"] section {
-        background: white !important;
-        border: 1px dashed #d4d4d4 !important;
-        border-radius: 10px !important;
-        padding: 20px !important;
-        transition: all 0.15s ease;
+        background: rgba(255, 245, 247, 0.5) !important;
+        border: 2px dashed rgba(212, 132, 154, 0.35) !important;
+        border-radius: 14px !important;
+        padding: 24px !important;
+        transition: all 0.3s ease;
     }
     [data-testid="stFileUploader"] section:hover {
-        border-color: #0a0a0a !important;
-        background: #fafafa !important;
+        border-color: rgba(212, 132, 154, 0.6) !important;
+        background: rgba(255, 235, 240, 0.4) !important;
     }
     [data-testid="stFileUploader"] button {
-        background: #0a0a0a !important;
+        background: linear-gradient(135deg, #e8a5a5 0%, #d4849a 100%) !important;
         color: white !important;
         border: none !important;
-        border-radius: 6px !important;
-        padding: 6px 14px !important;
+        border-radius: 10px !important;
+        padding: 8px 18px !important;
         font-weight: 500 !important;
         font-size: 13px !important;
-        box-shadow: none !important;
-        transition: all 0.15s ease !important;
+        box-shadow: 0 2px 6px rgba(212, 132, 154, 0.25) !important;
+        transition: all 0.2s ease !important;
     }
     [data-testid="stFileUploader"] button:hover {
-        background: #333 !important;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 10px rgba(212, 132, 154, 0.35) !important;
     }
     [data-testid="stFileUploaderFile"] {
-        background: #f5f5f5;
-        border-radius: 6px;
+        background: linear-gradient(135deg, #fef0f5 0%, #fff5f7 100%);
+        border-radius: 10px;
         padding: 8px 12px !important;
-        font-size: 12px;
-    }
-    [data-testid="stFileUploader"] small {
-        color: #999 !important;
-        font-size: 12px !important;
     }
 
-    /* === Radio:tab 风格 === */
-    [data-testid="stRadio"] > label {
-        display: none !important;
+    /* === Radio 美化 === */
+    [data-testid="stRadio"] label {
+        font-size: 14px !important;
+        color: #6b4f55 !important;
+        font-weight: 500 !important;
     }
     [data-testid="stRadio"] [role="radiogroup"] {
-        gap: 4px !important;
-        background: #f0f0f0;
-        padding: 3px;
-        border-radius: 8px;
-        display: inline-flex !important;
+        gap: 8px !important;
     }
     [data-testid="stRadio"] [role="radiogroup"] label {
-        background: transparent;
-        padding: 6px 14px;
-        border-radius: 6px;
-        border: none !important;
-        transition: all 0.15s ease;
-        cursor: pointer;
-        margin: 0 !important;
-    }
-    [data-testid="stRadio"] [role="radiogroup"] label[data-checked="true"],
-    [data-testid="stRadio"] [role="radiogroup"] label:has(input:checked) {
         background: white;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        padding: 8px 16px;
+        border-radius: 10px;
+        border: 1px solid rgba(212, 132, 154, 0.2);
+        transition: all 0.2s ease;
+        cursor: pointer;
     }
-    [data-testid="stRadio"] [role="radiogroup"] label p {
-        font-size: 13px !important;
-        font-weight: 500 !important;
-        color: #555 !important;
-    }
-    [data-testid="stRadio"] [role="radiogroup"] label[data-checked="true"] p,
-    [data-testid="stRadio"] [role="radiogroup"] label:has(input:checked) p {
-        color: #0a0a0a !important;
-    }
-    /* 隐藏 radio 圆点 */
-    [data-testid="stRadio"] [role="radiogroup"] label > div:first-child {
-        display: none !important;
+    [data-testid="stRadio"] [role="radiogroup"] label:hover {
+        border-color: rgba(212, 132, 154, 0.5);
+        background: #fef8f9;
     }
 
-    /* === KPI 卡:极简、纯白、单线边框 === */
+    /* === KPI 数字卡 === */
     .kpi-grid {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 1px;
-        background: #ececec;
-        border: 1px solid #ececec;
-        border-radius: 12px;
-        overflow: hidden;
-        margin-bottom: 28px;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 14px;
+        margin-bottom: 20px;
     }
     .kpi-card {
         background: white;
-        padding: 22px 24px;
-        transition: background 0.15s ease;
+        border-radius: 16px;
+        padding: 18px 22px;
+        border: 1px solid rgba(232, 165, 180, 0.12);
+        box-shadow: 0 2px 10px rgba(232, 165, 180, 0.06);
+        transition: all 0.2s ease;
     }
     .kpi-card:hover {
-        background: #fafafa;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(232, 165, 180, 0.14);
     }
     .kpi-label {
         font-size: 11px;
-        color: #999;
+        color: #a8888a;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
+        letter-spacing: 1px;
         font-weight: 600;
-        margin-bottom: 10px;
+        margin-bottom: 6px;
     }
     .kpi-value {
-        font-size: 32px;
-        font-weight: 600;
-        color: #0a0a0a;
+        font-size: 30px;
+        font-weight: 700;
+        color: #6b4f55;
         line-height: 1;
-        margin-bottom: 6px;
-        letter-spacing: -0.03em;
-        font-feature-settings: "tnum";
+        margin-bottom: 4px;
+        letter-spacing: -0.5px;
     }
     .kpi-sub {
         font-size: 12px;
-        color: #999;
+        color: #a8888a;
         font-weight: 400;
     }
-    .kpi-card .kpi-delta {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        font-size: 11px;
-        font-weight: 500;
-        margin-top: 4px;
-    }
-    .kpi-delta.positive { color: #0d7544; }
-    .kpi-delta.negative { color: #b42525; }
-    .kpi-delta.neutral { color: #999; }
+    .kpi-card.success { border-left: 4px solid #a8d5ba; }
+    .kpi-card.success .kpi-value { color: #4a8061; }
+    .kpi-card.primary { border-left: 4px solid #d4849a; }
+    .kpi-card.primary .kpi-value { color: #b85a78; }
+    .kpi-card.muted { border-left: 4px solid #d4c5c0; }
+    .kpi-card.warning { border-left: 4px solid #e8c587; }
+    .kpi-card.warning .kpi-value { color: #b58a3a; }
 
-    /* === 状态条:单色边框 + 简洁 === */
+    /* === 对账状态条 === */
     .status-bar {
-        border-radius: 10px;
-        padding: 12px 16px;
-        margin: 0 0 24px 0;
-        font-size: 13px;
+        border-radius: 16px;
+        padding: 16px 22px;
+        margin: 12px 0 22px 0;
+        font-weight: 500;
+        font-size: 14px;
         display: flex;
         align-items: center;
         gap: 12px;
-        border: 1px solid;
     }
     .status-bar.success {
-        background: #f4faf6;
-        color: #0d7544;
-        border-color: #d6ebde;
+        background: linear-gradient(135deg, #f0f9f3 0%, #e6f5ec 100%);
+        color: #4a8061;
+        border: 1px solid rgba(168, 213, 186, 0.4);
     }
     .status-bar.error {
-        background: #fdf5f5;
-        color: #b42525;
-        border-color: #f0d6d6;
+        background: linear-gradient(135deg, #fef0f0 0%, #fde6e6 100%);
+        color: #b85a5a;
+        border: 1px solid rgba(232, 165, 165, 0.4);
     }
     .status-bar.warning {
-        background: #fdfaf2;
-        color: #8a6a1a;
-        border-color: #efe5cc;
-    }
-    .status-bar.info {
-        background: #fafafa;
-        color: #555;
-        border-color: #ececec;
-    }
-    .status-bar strong {
-        font-weight: 600;
+        background: linear-gradient(135deg, #fef9ec 0%, #fdf3d9 100%);
+        color: #8a6a2a;
+        border: 1px solid rgba(232, 197, 135, 0.4);
     }
     .status-icon {
-        width: 16px;
-        height: 16px;
-        flex-shrink: 0;
+        font-size: 20px;
     }
 
-    /* === 明细块 === */
+    /* === 明细块小标题 === */
     .detail-section {
-        background: white;
-        border: 1px solid #ececec;
+        background: linear-gradient(135deg, #fefaf9 0%, #fdf5f7 100%);
         border-radius: 12px;
-        padding: 4px 20px;
-        margin-bottom: 24px;
+        padding: 14px 18px;
+        margin: 12px 0;
+        border: 1px solid rgba(232, 165, 180, 0.1);
     }
     .detail-row {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 12px 0;
+        padding: 5px 0;
         font-size: 13px;
-        color: #333;
+        color: #6b4f55;
     }
     .detail-row:not(:last-child) {
-        border-bottom: 1px solid #f5f5f5;
+        border-bottom: 1px dashed rgba(212, 132, 154, 0.18);
     }
-    .detail-label {
-        color: #666;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .detail-label-tag {
-        background: #f5f5f5;
-        color: #666;
-        padding: 2px 7px;
-        border-radius: 4px;
-        font-size: 11px;
-        font-family: "SF Mono", "Monaco", "Menlo", monospace;
-        font-weight: 500;
-    }
-    .detail-value {
-        font-weight: 600;
-        color: #0a0a0a;
-        font-feature-settings: "tnum";
-    }
-    .detail-value.muted {
-        color: #999;
-        font-weight: 500;
+    .detail-label { color: #8a7170; }
+    .detail-value { font-weight: 600; color: #6b4f55; }
+    .detail-value.pink { color: #b85a78; }
+    .detail-section-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: #b85a78;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 8px;
     }
 
-    /* === 表格 === */
+    /* === DataFrame 表格美化 === */
     [data-testid="stDataFrame"] {
-        border-radius: 12px;
+        border-radius: 16px;
         overflow: hidden;
-        border: 1px solid #ececec;
-    }
-    [data-testid="stDataFrame"] [data-testid="stDataFrameResizable"] {
-        border: none !important;
+        border: 1px solid rgba(232, 165, 180, 0.18);
+        box-shadow: 0 2px 12px rgba(232, 165, 180, 0.06);
     }
 
     /* === 下载按钮 === */
     [data-testid="stDownloadButton"] button {
-        background: #0a0a0a !important;
+        background: linear-gradient(135deg, #d4849a 0%, #c46e89 100%) !important;
         color: white !important;
         border: none !important;
-        border-radius: 8px !important;
-        padding: 9px 18px !important;
-        font-weight: 500 !important;
-        font-size: 13px !important;
-        box-shadow: none !important;
-        transition: all 0.15s ease !important;
-        letter-spacing: 0;
+        border-radius: 12px !important;
+        padding: 10px 24px !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        box-shadow: 0 3px 10px rgba(196, 110, 137, 0.25) !important;
+        transition: all 0.25s ease !important;
+        letter-spacing: 0.3px;
     }
     [data-testid="stDownloadButton"] button:hover {
-        background: #333 !important;
-        transform: none;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(196, 110, 137, 0.35) !important;
     }
 
-    /* === 默认 alert 美化兜底 === */
+    /* === Streamlit 默认 alert 美化兜底 === */
     [data-testid="stAlert"] {
-        border-radius: 10px !important;
-        border: 1px solid #ececec !important;
-        background: #fafafa !important;
-        font-size: 13px !important;
+        border-radius: 14px !important;
+        border: none !important;
     }
 
-    /* === 上传卡标签 === */
-    .uploader-label {
+    /* === 分隔线 === */
+    .nv-divider {
+        height: 1px;
+        background: linear-gradient(90deg, transparent 0%, rgba(212, 132, 154, 0.25) 50%, transparent 100%);
+        margin: 28px 0;
+        border: none;
+    }
+
+    /* === 段落小标题 === */
+    .section-header {
+        font-size: 18px;
+        font-weight: 700;
+        color: #6b4f55;
+        margin: 24px 0 14px 0;
         display: flex;
         align-items: center;
-        gap: 6px;
-        font-size: 12px;
-        font-weight: 500;
-        color: #555;
-        margin-bottom: 8px;
+        gap: 10px;
     }
-    .uploader-required {
-        color: #b42525;
-        font-size: 11px;
-    }
-    .uploader-optional {
-        color: #999;
-        font-size: 11px;
-    }
-
-    /* === 空状态 === */
-    .empty-state {
-        background: white;
-        border: 1px solid #ececec;
-        border-radius: 12px;
-        padding: 64px 40px;
-        text-align: center;
-        margin: 32px 0;
-    }
-    .empty-state-icon {
-        width: 40px;
-        height: 40px;
-        margin: 0 auto 16px;
-        color: #d4d4d4;
-    }
-    .empty-state-title {
-        font-size: 14px;
-        color: #555;
-        font-weight: 500;
-        margin-bottom: 4px;
-    }
-    .empty-state-sub {
-        font-size: 12px;
-        color: #999;
-    }
-
-    /* === 颜色图例 === */
-    .color-legend {
-        display: flex;
-        gap: 18px;
-        flex-wrap: wrap;
-        padding: 12px 0 4px;
-        font-size: 12px;
-        color: #999;
-    }
-    .legend-item {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-    .legend-swatch {
-        width: 10px;
-        height: 10px;
+    .section-header::before {
+        content: '';
+        width: 4px;
+        height: 18px;
+        background: linear-gradient(180deg, #d4849a 0%, #c46e89 100%);
         border-radius: 2px;
-    }
-
-    /* === SKU chip === */
-    .sku-chip {
-        display: inline-block;
-        background: #fdf5f5;
-        color: #b42525;
-        border: 1px solid #f0d6d6;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-size: 11px;
-        font-family: "SF Mono", "Monaco", "Menlo", monospace;
-        font-weight: 500;
-        margin: 2px 4px 2px 0;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================================
-# Header
+# Hero 区
 # ============================================================================
 st.markdown("""
-<div class="nv-header">
-    <div class="nv-eyebrow">NailVesta · Warehouse</div>
-    <h1 class="nv-title">拣货单汇总</h1>
-    <p class="nv-subtitle">解析 TikTok Shop 拣货 PDF,自动拆分 bundle、对账核验、按库位排序</p>
+<div class="hero-wrap">
+    <span class="hero-tag">✨ NailVesta Warehouse Tool</span>
+    <h1 class="hero-title">拣货单汇总工具 💅</h1>
+    <p class="hero-subtitle">
+        Smart picking & reconciliation · 智能拆分 bundle、自动对账、按库位排序
+    </p>
 </div>
 """, unsafe_allow_html=True)
 
 # ========== 维护提醒 ==========
 st.markdown("""
-<div class="nv-reminder">
-    <span class="nv-reminder-dot"></span>
-    <div>新款上架时,请同步更新 GitHub 中的 <code>sku_prefix_to_name</code> 与 <code>new_sku_prefix</code>,push 后线上自动同步生效</div>
+<div class="reminder-bar">
+    <span style="font-size:18px;">📢</span>
+    <div>
+        <strong>新款上架提醒</strong>:有新款 SKU 上架时,请及时更新 GitHub 代码中的对照表
+        <code>sku_prefix_to_name</code> 与 <code>new_sku_prefix</code>,push 后线上自动同步,
+        否则会显示为 ❓未识别。
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
 # ============================================================================
 # 上传区
 # ============================================================================
-st.markdown('<div class="nv-section">文件上传</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">📁 文件上传</div>', unsafe_allow_html=True)
 
 col_up1, col_up2 = st.columns(2)
 
 with col_up1:
-    st.markdown('<div class="uploader-label">产品图册 CSV <span class="uploader-optional">· 可选</span></div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:13px; color:#8a7170; margin-bottom:6px; font-weight:500;">📚 产品图册 CSV<span style="color:#c4c4c4; font-weight:400;"> · 可选</span></div>', unsafe_allow_html=True)
     catalog_file = st.file_uploader(
         " ",
         type=["csv"],
@@ -537,7 +471,7 @@ with col_up1:
     )
 
 with col_up2:
-    st.markdown('<div class="uploader-label">拣货 PDF <span class="uploader-required">· 必选</span></div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:13px; color:#8a7170; margin-bottom:6px; font-weight:500;">📤 拣货 PDF<span style="color:#d4849a; font-weight:600;"> · 必选</span></div>', unsafe_allow_html=True)
     uploaded_file = st.file_uploader(
         " ",
         type=["pdf"],
@@ -557,19 +491,17 @@ if catalog_file:
             sku_to_location = dict(zip(valid['SKU'], valid['库位']))
             st.markdown(f"""
             <div class="status-bar success">
-                <svg class="status-icon" viewBox="0 0 16 16" fill="none">
-                    <path d="M13.5 4.5L6 12L2.5 8.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+                <span class="status-icon">✅</span>
                 <span>已加载 <strong>{len(sku_to_location)}</strong> 个 SKU 的库位映射</span>
             </div>
             """, unsafe_allow_html=True)
         else:
-            st.warning("图册缺少 'SKU' 或 '库位' 列")
+            st.warning("⚠️ 图册缺少 'SKU' 或 '库位' 列")
     except Exception as e:
-        st.error(f"读取图册失败:{e}")
+        st.error(f"读取图册失败: {e}")
 
 # ============================================================================
-# SKU 映射表
+# SKU 映射表(保持不变)
 # ============================================================================
 sku_prefix_to_name = {
     "NDF001":"Tropic Paradise","NPX014":"Afterglow","NDX001":"Pinky Promise","NHF001":"Gothic Moon","NHX001":"Emerald Garden",
@@ -618,6 +550,7 @@ sku_prefix_to_name = {
     "NOF031":"Lady Cherry","NOF029":"Marine Glow","NDJ002":"Aqua Blush","NWF001":"Berry Bowtie","NTF001":"Pastel Coast",
     "NOX025":"Golden Nectar","NWX002":"Meadow Daisy","NOX023":"Mermaid Glam","NOX021":"Peach Ember","NOX022":"Sunlit Petals",
     "NOX024":"Teal Blossom","NVF006":"Lime Petals","NOJ022":"Leaf Petals",
+    # 无尺寸款 SKU
     "NB001":"Organizer Binder",
 }
 updated_mapping = dict(sku_prefix_to_name)
@@ -630,7 +563,7 @@ new_sku_prefix = {
 SIZELESS_SKUS = {"NF001", "NB001"}
 
 # ============================================================================
-# 解析工具
+# 解析工具函数
 # ============================================================================
 SKU_BUNDLE = re.compile(r'((?:[A-Z]{3}\d{3}|NF001){1,4}-[SML])', re.DOTALL)
 QTY_AFTER  = re.compile(r'\b([1-9]\d{0,2})\b')
@@ -686,6 +619,9 @@ def expand_bundle(counter: dict, sku_with_size: str, qty: int):
 
 
 def count_choose_sets_items(text: str) -> int:
+    # Choose N Sets 段落:每个套装下面跟若干行,每行最后一个数字是该子项数量。
+    # 启发式:从每个 'Choose N Sets' 出现位置往后,直到下一个正式 SKU 或下一个 Choose 段落,
+    # 在这段范围内累加 (数量, 18位订单ID) 配对的"数量"。
     total = 0
     positions = [m.start() for m in CHOOSE_SETS_RE.finditer(text)]
     if not positions:
@@ -717,13 +653,14 @@ def location_sort_key(loc: str):
 # ============================================================================
 if not uploaded_file:
     st.markdown("""
-    <div class="empty-state">
-        <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"
-                  stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <div class="empty-state-title">等待上传拣货 PDF</div>
-        <div class="empty-state-sub">上传后将自动解析、拆分 bundle 并按库位排序</div>
+    <div class="nv-card" style="text-align:center; padding: 50px 30px; background: linear-gradient(135deg, #ffffff 0%, #fef8f9 100%);">
+        <div style="font-size: 48px; margin-bottom: 12px;">📤</div>
+        <div style="font-size: 16px; color: #8a7170; font-weight: 500;">
+            等待上传拣货 PDF
+        </div>
+        <div style="font-size: 13px; color: #b0a0a0; margin-top: 6px;">
+            上传后将自动解析、拆分 bundle 并按库位排序
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -776,6 +713,7 @@ else:
     total_qty = sum(sku_counts.values())
     expected_with_bundle = expected_total + bundle_extra
 
+    # ========== 构建 DataFrame ==========
     if sku_counts:
         df = pd.DataFrame(list(sku_counts.items()), columns=["Seller SKU", "Qty"])
         df["SKU Prefix"]   = df["Seller SKU"].str.split("-").str[0]
@@ -784,7 +722,7 @@ else:
         def map_name(prefix):
             if prefix == "__CHOOSE_SETS__":
                 return "Choose 2 Sets(混合套装)"
-            return updated_mapping.get(prefix, "未识别")
+            return updated_mapping.get(prefix, "❓未识别")
         df["Product Name"] = df["SKU Prefix"].map(map_name)
 
         df_sized = df[df["Size"].notna()].copy()
@@ -818,107 +756,89 @@ else:
 
         def map_location(prefix):
             if prefix in SIZELESS_SKUS or prefix == "__CHOOSE_SETS__":
-                return "无库位"
+                return "无库位(特殊款)"
             return sku_to_location.get(prefix, "未识别库位")
         pivot["库位"] = pivot["SKU Prefix"].map(map_location)
 
-        # ========== 对账区 ==========
-        st.markdown('<div class="nv-section">对账结果</div>', unsafe_allow_html=True)
+        # ========== 对账区:KPI 卡 ==========
+        st.markdown('<div class="section-header">📊 对账结果</div>', unsafe_allow_html=True)
 
-        nail_qty = int(pivot[~pivot["库位"].isin(["无库位", "未识别库位"])]["Total"].sum()) \
+        nail_qty = int(pivot[~pivot["库位"].str.startswith("无库位")]["Total"].sum()) \
                    if not pivot.empty else 0
-        special_qty = int(pivot[pivot["库位"] == "无库位"]["Total"].sum()) \
+        special_qty = int(pivot[pivot["库位"].str.startswith("无库位")]["Total"].sum()) \
                       if not pivot.empty else 0
-        unknown_loc_qty = int(pivot[pivot["库位"] == "未识别库位"]["Total"].sum()) \
-                          if not pivot.empty else 0
 
         # 状态条
         if expected_total == 0:
             st.markdown("""
             <div class="status-bar warning">
-                <svg class="status-icon" viewBox="0 0 16 16" fill="none">
-                    <path d="M8 5v3.5M8 11h.007M7.13 2.59l-5.84 9.74A1 1 0 002.16 14h11.68a1 1 0 00.87-1.67L8.87 2.59a1 1 0 00-1.74 0z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+                <span class="status-icon">⚠️</span>
                 <span>未识别到 PDF 中的 Item quantity,无法进行对账校验</span>
             </div>
             """, unsafe_allow_html=True)
         elif total_qty == expected_with_bundle or total_qty == expected_total:
-            bundle_note = f" + bundle 拆分 {bundle_extra}" if bundle_extra else ""
             st.markdown(f"""
             <div class="status-bar success">
-                <svg class="status-icon" viewBox="0 0 16 16" fill="none">
-                    <path d="M13.5 4.5L6 12L2.5 8.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span><strong>对账一致</strong> · PDF 标注 {expected_total}{bundle_note} = 实际提取 {total_qty}</span>
+                <span class="status-icon">✨</span>
+                <span><strong>对账成功</strong> · PDF 标注 {expected_total}
+                {'+ bundle 拆分 ' + str(bundle_extra) if bundle_extra else ''}
+                = 实际提取 {total_qty} 件 ✅</span>
             </div>
             """, unsafe_allow_html=True)
         else:
             diff = total_qty - expected_with_bundle
             st.markdown(f"""
             <div class="status-bar error">
-                <svg class="status-icon" viewBox="0 0 16 16" fill="none">
-                    <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                </svg>
+                <span class="status-icon">❌</span>
                 <span><strong>对账不一致</strong> · 期望 {expected_with_bundle},实际 {total_qty},差 {diff:+d} 件</span>
             </div>
             """, unsafe_allow_html=True)
 
-        # KPI 卡
+        # KPI 数字卡
         st.markdown(f"""
         <div class="kpi-grid">
-            <div class="kpi-card">
+            <div class="kpi-card primary">
                 <div class="kpi-label">PDF 标注</div>
-                <div class="kpi-value">{expected_total:,}</div>
+                <div class="kpi-value">{expected_total}</div>
                 <div class="kpi-sub">Item quantity</div>
             </div>
-            <div class="kpi-card">
+            <div class="kpi-card success">
                 <div class="kpi-label">实际提取</div>
-                <div class="kpi-value">{total_qty:,}</div>
+                <div class="kpi-value">{total_qty}</div>
                 <div class="kpi-sub">含 bundle 拆分</div>
             </div>
             <div class="kpi-card">
                 <div class="kpi-label">普通甲片</div>
-                <div class="kpi-value">{nail_qty:,}</div>
+                <div class="kpi-value">{nail_qty}</div>
                 <div class="kpi-sub">有库位</div>
             </div>
-            <div class="kpi-card">
+            <div class="kpi-card muted">
                 <div class="kpi-label">特殊款</div>
-                <div class="kpi-value">{special_qty:,}</div>
-                <div class="kpi-sub">无尺寸 / 无库位</div>
+                <div class="kpi-value">{special_qty}</div>
+                <div class="kpi-sub">无尺寸/无库位</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # 提取明细
+        # 提取明细卡
         st.markdown(f"""
         <div class="detail-section">
+            <div class="detail-section-title">📋 提取明细</div>
             <div class="detail-row">
-                <span class="detail-label">
-                    <span class="detail-label-tag">NF001</span>
-                    Free Giveaway
-                </span>
-                <span class="detail-value">{mystery_units}</span>
+                <span class="detail-label">🎁 Free Giveaway (NF001)</span>
+                <span class="detail-value pink">{mystery_units} 件</span>
             </div>
             <div class="detail-row">
-                <span class="detail-label">
-                    <span class="detail-label-tag">NB001</span>
-                    Organizer Binder
-                </span>
-                <span class="detail-value">{binder_units}</span>
+                <span class="detail-label">📒 Organizer Binder (NB001)</span>
+                <span class="detail-value pink">{binder_units} 件</span>
             </div>
             <div class="detail-row">
-                <span class="detail-label">
-                    <span class="detail-label-tag">SETS</span>
-                    Choose Sets 混合套装
-                </span>
-                <span class="detail-value">{choose_sets_units}</span>
+                <span class="detail-label">🎀 Choose Sets(混合套装)</span>
+                <span class="detail-value pink">{choose_sets_units} 件</span>
             </div>
             <div class="detail-row">
-                <span class="detail-label">
-                    <span class="detail-label-tag">+</span>
-                    bundle 拆分多出件数
-                </span>
-                <span class="detail-value muted">+{bundle_extra}</span>
+                <span class="detail-label">🔗 bundle 拆分多出件数</span>
+                <span class="detail-value">+{bundle_extra} 件</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -931,18 +851,19 @@ else:
                 if prefix not in unknown_prefix_list:
                     unknown_prefix_list.append(prefix)
         if unknown_prefix_list:
-            chips = "".join([f'<span class="sku-chip">{p}</span>' for p in unknown_prefix_list])
+            sku_chips = " ".join([
+                f'<code style="background:#fde6e6; color:#b85a5a; padding:3px 9px; border-radius:6px; font-size:12px; margin:2px;">{p}</code>'
+                for p in unknown_prefix_list
+            ])
             st.markdown(f"""
             <div class="status-bar error">
-                <svg class="status-icon" viewBox="0 0 16 16" fill="none">
-                    <path d="M8 5v3.5M8 11h.007M7.13 2.59l-5.84 9.74A1 1 0 002.16 14h11.68a1 1 0 00.87-1.67L8.87 2.59a1 1 0 00-1.74 0z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+                <span class="status-icon">🚨</span>
                 <div>
-                    <div style="margin-bottom: 4px;"><strong>{len(unknown_prefix_list)} 个未识别的 SKU 前缀</strong></div>
-                    <div style="margin: 6px 0;">{chips}</div>
-                    <div style="font-size: 12px; opacity: 0.85; margin-top: 6px;">
-                        请尽快在 GitHub 中更新 <code style="background:rgba(180,37,37,0.08); padding:1px 5px; border-radius:3px; font-family:monospace;">sku_prefix_to_name</code>,push 后重新部署
-                    </div>
+                    <strong>发现 {len(unknown_prefix_list)} 个未识别的 SKU 前缀</strong><br>
+                    <div style="margin:6px 0;">{sku_chips}</div>
+                    <span style="font-size:12px; opacity:0.85;">
+                        请尽快在 GitHub 仓库中更新 <code style="background:rgba(184,90,90,0.12); padding:1px 5px; border-radius:4px;">sku_prefix_to_name</code>,push 后重新部署
+                    </span>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -953,44 +874,38 @@ else:
             names = "、".join(truly_unknown['Product Name'].tolist())
             st.markdown(f"""
             <div class="status-bar warning">
-                <svg class="status-icon" viewBox="0 0 16 16" fill="none">
-                    <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/>
-                    <path d="M8 5v3.5M8 11h.007" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                </svg>
+                <span class="status-icon">⚠️</span>
                 <span><strong>{len(truly_unknown)} 个款式没有库位信息</strong>(需补充图册 CSV):{names}</span>
             </div>
             """, unsafe_allow_html=True)
 
         # 特殊款提示
-        special_rows = pivot[pivot["库位"] == "无库位"]
+        special_rows = pivot[pivot["库位"] == "无库位(特殊款)"]
         if not special_rows.empty:
             special_names = "、".join(special_rows["Product Name"].tolist())
             st.markdown(f"""
-            <div class="status-bar info">
-                <svg class="status-icon" viewBox="0 0 16 16" fill="none">
-                    <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/>
-                    <path d="M8 5.5V8.5M8 11h.007" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                </svg>
-                <span><strong>{len(special_rows)} 类无尺寸特殊款</strong>不参与库位拣货:{special_names}</span>
+            <div class="status-bar warning" style="background:linear-gradient(135deg,#f5f0f5 0%,#ede5ec 100%); color:#6a4f60; border-color:rgba(180,150,170,0.3);">
+                <span class="status-icon">ℹ️</span>
+                <span><strong>{len(special_rows)} 类无尺寸/特殊款</strong>不参与库位拣货:{special_names}(需单独处理)</span>
             </div>
             """, unsafe_allow_html=True)
 
-        # ========== 排序 + 表格 ==========
-        st.markdown('<div class="nv-section">拣货明细 <span class="nv-section-count">· '
-                    f'{len(pivot)} 个款式</span></div>', unsafe_allow_html=True)
+        # ========== 排序模式 ==========
+        st.markdown('<div class="nv-divider"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">📋 拣货明细表</div>', unsafe_allow_html=True)
 
         sort_mode = st.radio(
             "排序方式",
-            ["按库位顺序", "按字母 A-Z"],
+            ["📦 按库位顺序(拣货模式)", "🔤 按字母顺序(A-Z)"],
             horizontal=True,
             label_visibility="collapsed",
-            help="按库位:从 A-01-01 顺着货架走一遍。按字母:产品名 A-Z 排列"
+            help="拣货模式:从 A-01-01 顺着货架走一遍即可。字母顺序:按产品名 A-Z 排列,方便查找"
         )
 
         is_special = pivot["SKU Prefix"].isin(SIZELESS_SKUS | {"__CHOOSE_SETS__"})
         pivot["_special"] = is_special.astype(int)
 
-        if sort_mode == "按库位顺序":
+        if sort_mode.startswith("📦"):
             pivot["_loc_key"] = pivot["库位"].apply(location_sort_key)
             pivot = pivot.sort_values(
                 by=["_special", "_loc_key", "Product Name"],
@@ -1005,7 +920,7 @@ else:
 
         pivot = pivot[["库位", "Product Name", "S", "M", "L", "Total"]]
 
-        # 行高亮(克制配色)
+        # 行高亮
         prefix_lookup = {name: sku_p for sku_p, name in updated_mapping.items()}
 
         def highlight_row(row):
@@ -1014,16 +929,16 @@ else:
             prefix = prefix_lookup.get(name, "")
 
             if loc == "未识别库位":
-                return ['background-color: #fdfaf2'] * len(row)
-            if loc == "无库位":
-                return ['background-color: #f8f8f8; color: #888'] * len(row)
+                return ['background-color: #fef5e7'] * len(row)
+            if loc == "无库位(特殊款)":
+                return ['background-color: #f5f0f5'] * len(row)
             if prefix in new_sku_prefix:
-                return ['background-color: #f4faf6'] * len(row)
+                return ['background-color: #fff0f5'] * len(row)
             return [''] * len(row)
 
         pivot_styled = pivot.style.apply(highlight_row, axis=1).set_properties(**{
             'font-size': '13px',
-            'color': '#0a0a0a',
+            'color': '#6b4f55',
         })
 
         st.dataframe(
@@ -1035,27 +950,27 @@ else:
 
         # 颜色图例
         st.markdown("""
-        <div class="color-legend">
-            <div class="legend-item">
-                <span class="legend-swatch" style="background:#f4faf6; border:1px solid #d6ebde;"></span>
+        <div style="display:flex; gap:18px; flex-wrap:wrap; padding:10px 0; font-size:12px; color:#8a7170;">
+            <div style="display:flex; align-items:center; gap:6px;">
+                <span style="width:14px; height:14px; background:#fff0f5; border:1px solid rgba(212,132,154,0.3); border-radius:3px;"></span>
                 <span>新款</span>
             </div>
-            <div class="legend-item">
-                <span class="legend-swatch" style="background:#fdfaf2; border:1px solid #efe5cc;"></span>
+            <div style="display:flex; align-items:center; gap:6px;">
+                <span style="width:14px; height:14px; background:#fef5e7; border:1px solid rgba(232,197,135,0.4); border-radius:3px;"></span>
                 <span>缺库位信息</span>
             </div>
-            <div class="legend-item">
-                <span class="legend-swatch" style="background:#f8f8f8; border:1px solid #ececec;"></span>
+            <div style="display:flex; align-items:center; gap:6px;">
+                <span style="width:14px; height:14px; background:#f5f0f5; border:1px solid rgba(180,150,170,0.3); border-radius:3px;"></span>
                 <span>无尺寸特殊款</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
         # 下载
-        st.markdown('<div style="margin-top: 24px;"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="margin-top:18px;"></div>', unsafe_allow_html=True)
         csv = pivot.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
-            "下载产品明细 CSV",
+            "📥 下载产品明细 CSV",
             data=csv,
             file_name="product_summary_named.csv",
             mime="text/csv"
@@ -1064,9 +979,7 @@ else:
     else:
         st.markdown("""
         <div class="status-bar error">
-            <svg class="status-icon" viewBox="0 0 16 16" fill="none">
-                <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-            </svg>
+            <span class="status-icon">❌</span>
             <span>未识别到任何 SKU。请确认 PDF 为可复制文本(非扫描件)</span>
         </div>
         """, unsafe_allow_html=True)
