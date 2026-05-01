@@ -549,7 +549,7 @@ sku_prefix_to_name = {
     "NOX020":"Floral Drip","NOX019":"Mint Petal","NOF030":"Citrus Veil",
     "NOF031":"Lady Cherry","NOF029":"Marine Glow","NDJ002":"Aqua Blush","NWF001":"Berry Bowtie","NTF001":"Pastel Coast",
     "NOX025":"Golden Nectar","NWX002":"Meadow Daisy","NOX023":"Mermaid Glam","NOX021":"Peach Ember","NOX022":"Sunlit Petals",
-    "NOX024":"Teal Blossom","NVF006":"Lime Petals","NOJ022":"Leaf Petals","NOF032":"Tidal Flower","NWF002":"Tropic Shell",
+    "NOX024":"Teal Blossom","NVF006":"Lime Petals","NOJ022":"Leaf Petals","NOF032":"Tidal Flower","NWF002":"Tropic Shell","NMX004":"MYSTERY BOX",
     # 无尺寸款 SKU
     "NB001":"Organizer Binder","NVT001":"TOOLKITS",
 }
