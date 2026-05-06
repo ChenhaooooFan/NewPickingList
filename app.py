@@ -534,7 +534,7 @@ sku_prefix_to_name = {
     "NMF003":"Royal Treasure","NMF002":"Safari Princess","NOJ013":"Midnight Denim","NOJ014":"Imperial Frost",
     "NPJ019":"Gothic Mist","NOJ015":"Sapphire Bloom",
     "NPX025":"Cocoa Teddy","NVF001":"Golden Bloom","NBJ002":"Cherry Drop",
-    "NOF022":"Aqua Reverie","NDJ001":"Snow Knit",
+    "NOF022":"Aqua Reverie","NDJ001":"Snow Knit","NOF023":"Arctic Starlight",
     "NOX016":"Cherry Ribbon","NOX017":"Ruby Bow","NMF004":"Lavender Bloom","NDX002":"Cloudy Knit","NMJ003":"Gothic Rose",
     "NOF025":"Cherry Romance","NMJ001":"Milky Cloud",
     "NMX001":"Petal Muse","NOF024":"Floral Muse","NVX001":"Sakura Macaron","NVF002":"Dreamy Bloom","NOJ017":"Floral Garden",
