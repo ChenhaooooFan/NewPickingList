@@ -550,7 +550,7 @@ sku_prefix_to_name = {
     "NOF031":"Lady Cherry","NOF029":"Marine Glow","NDJ002":"Aqua Blush","NWF001":"Berry Bowtie","NTF001":"Pastel Coast",
     "NOX025":"Golden Nectar","NWX002":"Meadow Daisy","NOX023":"Mermaid Glam","NOX021":"Peach Ember","NOX022":"Sunlit Petals",
     "NOX024":"Teal Blossom","NVF006":"Lime Petals","NOJ022":"Leaf Petals","NOF032":"Tidal Flower","NWF002":"Tropic Shell","NMX004":"MYSTERY BOX",
-    "NOF034":"Golden Hibiscus","NOF033":"Jade Garden","NOJ023":"Mermaid Shell","NOJ024":"Sunset Treasure","NBX003":"Jelly Petal","NWF003":"Silk Blossom","NWF001":"Melon Petal",
+    "NOF034":"Golden Hibiscus","NOF033":"Jade Garden","NOJ023":"Mermaid Shell","NOJ024":"Sunset Treasure","NBX003":"Jelly Petal","NWF003":"Silk Blossom","NWF004":"Melon Petal",
     "NVJ002":"Mochi Blossom","NOJ025":"Petal Empress","NVJ003":"Petal Throne","NWX003":"Aloha Bloom","NOX026":"Papaya Bloom","NOF035":"Ocean Picnic","NOJ026":"Aqua Taffy","NOX027":"Coral Foam","NOJ027":"Opal Dynasty",
     # 无尺寸款 SKU
     "NB001":"Organizer Binder","NVT001":"TOOLKITS",
