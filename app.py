@@ -547,7 +547,7 @@ sku_prefix_to_name = {
     "NOJ021":"Petal Gelato",
     "NVF003":"Apricot Cream","NMJ005":"Glossy Aura","NGX001":"Seafoam Jewel","NOF028":"Floral Cherry","NTX001":"Coraline Glow",
     "NOX020":"Floral Drip","NOX019":"Mint Petal","NOF030":"Citrus Veil",
-    "NOF031":"Lady Cherry","NOF029":"Marine Glow","NDJ002":"Aqua Blush","NWF001":"Berry Bowtie","NTF001":"Pastel Coast",
+    "NOF031":"Lady Cherry","NOF029":"Marine Glow","NDJ002":"Aqua Blush","NWF001":"Berry Bowtie","NTF001":"Pastel Coast","NWF005":"Sunflower Safari","NOJ028":"Cowgirl Charm","NOJ029":"Pearl Tide",
     "NOX025":"Golden Nectar","NWX002":"Meadow Daisy","NOX023":"Mermaid Glam","NOX021":"Peach Ember","NOX022":"Sunlit Petals",
     "NOX024":"Teal Blossom","NVF006":"Lime Petals","NOJ022":"Leaf Petals","NOF032":"Tidal Flower","NWF002":"Tropic Shell","NMX004":"MYSTERY BOX",
     "NOF034":"Golden Hibiscus","NOF033":"Jade Garden","NOJ023":"Mermaid Shell","NOJ024":"Sunset Treasure","NBX003":"Jelly Petal","NWF003":"Silk Blossom","NWF004":"Melon Petal",
