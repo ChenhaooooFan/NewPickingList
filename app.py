@@ -532,7 +532,7 @@ sku_prefix_to_name = {
     "NF001":"Free Giveaway","NIF001":"Lilac Veil","NIF002":"Gingerbread","NOX015":"Glitter Doll","NOJ012":"Winery Flame",
     "NOF021":"Velvet Ribbon","NPX024":"Rose Wine","NPX023":"Blooming Kiss","NMF001":"Cherry Crush","NBX001":"Ballet Petal",
     "NMF003":"Royal Treasure","NMF002":"Safari Princess","NOJ013":"Midnight Denim","NOJ014":"Imperial Frost",
-    "NPJ019":"Gothic Mist","NOJ015":"Sapphire Bloom",
+    "NPJ019":"Gothic Mist","NOJ015":"Sapphire Bloom","NOX029":"Tidal Mirage","NVF007":"Tangerine Tide","NOF036":"Honey Petal","NOJ030":"Glitter Jasmine",
     "NPX025":"Cocoa Teddy","NVF001":"Golden Bloom","NBJ002":"Cherry Drop",
     "NOF022":"Aqua Reverie","NDJ001":"Snow Knit","NOF023":"Arctic Starlight",
     "NOX016":"Cherry Ribbon","NOX017":"Ruby Bow","NMF004":"Lavender Bloom","NDX002":"Cloudy Knit","NMJ003":"Gothic Rose",
