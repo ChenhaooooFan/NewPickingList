@@ -19,7 +19,8 @@ NailVesta 拣货单汇总工具
 【输出】
 - 屏幕上的对账面板(PDF 标注 vs 实际提取)
 - 按库位/字母排序的产品明细表(库位、产品名、S/M/L、Total)
-- 可下载的 CSV 文件
+- B链产品汇总(产品名、数量)
+- 可下载的合并 CSV 文件(美甲拣货 + B链产品两段)
 
 【对账逻辑(核心)】
 PDF 头部的 Item quantity 把所有"行"都算一份,但实际拣货时:
@@ -29,10 +30,11 @@ PDF 头部的 Item quantity 把所有"行"都算一份,但实际拣货时:
 3. NB001 (Organizer Binder) 是收纳册,无尺寸,PDF 里独立成行
 4. "Choose N Sets" 段落用占位 SKU(1/2/3),无具体款式信息,
    只能按段落汇总成一行"混合套装"
+5. B链产品(NVT001/002、NSB001、NOB001/002)单独汇总在 B链产品区域
 
 最终对账公式:
     期望件数 = PDF 标注数量 + bundle 拆分多出件数
-    实际件数 = 所有提取出的 SKU 件数总和(含 NF001 / NB001 / Choose Sets)
+    实际件数 = 所有提取出的 SKU 件数总和(含 NF001/NB001/Choose Sets/B链)
     两者应相等
 
 【特殊 SKU 处理】
@@ -41,6 +43,9 @@ PDF 头部的 Item quantity 把所有"行"都算一份,但实际拣货时:
 | NF001     | Free Giveaway    | 无   | 无       | 独立成行,灰色背景  |
 | NB001     | Organizer Binder | 无   | 无       | 独立成行,灰色背景  |
 | 1/2/3...  | Choose N Sets    | 无   | 无       | 段落汇总,灰色背景  |
+| NVT001/2  | 工具包 Toolkits  | 无   | 无       | B链产品区域        |
+| NSB001    | 美甲折叠盒       | 无   | 无       | B链产品区域        |
+| NOB001/2  | Organizer Binder | 无   | 无       | B链产品区域        |
 
 【表格颜色含义】
 - 🟡 黄色:真正缺库位信息,需补充图册 CSV
@@ -56,6 +61,7 @@ streamlit, pandas, pymupdf (fitz)
 - 新增近期新款 → 同时加入 new_sku_prefix(用于粉色标记)
 - 新增无尺寸 SKU → 同时加入 sku_prefix_to_name 和 SIZELESS_SKUS,
   并增加对应的正则匹配(参考 NB_ONLY 的写法)
+- 新增 B链产品 → 在 B_CHAIN_SKU_MAP 加一行映射
 - 改完后务必 push 到 GitHub,否则线上工具仍是旧版,会出现"❓未识别"
 ================================================================================
 """
@@ -262,7 +268,7 @@ st.markdown("""
     /* === KPI 数字卡 === */
     .kpi-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
         gap: 14px;
         margin-bottom: 20px;
     }
@@ -306,6 +312,8 @@ st.markdown("""
     .kpi-card.muted { border-left: 4px solid #d4c5c0; }
     .kpi-card.warning { border-left: 4px solid #e8c587; }
     .kpi-card.warning .kpi-value { color: #b58a3a; }
+    .kpi-card.bchain { border-left: 4px solid #a5c8e8; }
+    .kpi-card.bchain .kpi-value { color: #3a6a8a; }
 
     /* === 对账状态条 === */
     .status-bar {
@@ -359,6 +367,7 @@ st.markdown("""
     .detail-label { color: #8a7170; }
     .detail-value { font-weight: 600; color: #6b4f55; }
     .detail-value.pink { color: #b85a78; }
+    .detail-value.blue { color: #3a6a8a; }
     .detail-section-title {
         font-size: 12px;
         font-weight: 700;
@@ -425,6 +434,32 @@ st.markdown("""
         background: linear-gradient(180deg, #d4849a 0%, #c46e89 100%);
         border-radius: 2px;
     }
+
+    /* === B链产品区域 === */
+    .bchain-wrap {
+        background: linear-gradient(135deg, #f0f6fb 0%, #e8f2f8 100%);
+        border-radius: 20px;
+        padding: 24px 28px;
+        margin-top: 8px;
+        border: 1px solid rgba(165, 200, 232, 0.35);
+        box-shadow: 0 2px 12px rgba(100, 160, 210, 0.07);
+    }
+    .bchain-header {
+        font-size: 18px;
+        font-weight: 700;
+        color: #2e5f80;
+        margin: 0 0 16px 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .bchain-header::before {
+        content: '';
+        width: 4px;
+        height: 18px;
+        background: linear-gradient(180deg, #6baed4 0%, #3a82aa 100%);
+        border-radius: 2px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -447,8 +482,8 @@ st.markdown("""
     <span style="font-size:18px;">📢</span>
     <div>
         <strong>新款上架提醒</strong>:有新款 SKU 上架时,请及时更新 GitHub 代码中的对照表
-        <code>sku_prefix_to_name</code> 与 <code>new_sku_prefix</code>,push 后线上自动同步,
-        否则会显示为 ❓未识别。
+        <code>sku_prefix_to_name</code> 与 <code>new_sku_prefix</code>;
+        新增 B链产品请更新 <code>B_CHAIN_SKU_MAP</code>,push 后线上自动同步。
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -501,7 +536,7 @@ if catalog_file:
         st.error(f"读取图册失败: {e}")
 
 # ============================================================================
-# SKU 映射表(保持不变)
+# SKU 映射表
 # ============================================================================
 sku_prefix_to_name = {
     "NDF001":"Tropic Paradise","NPX014":"Afterglow","NDX001":"Pinky Promise","NHF001":"Gothic Moon","NHX001":"Emerald Garden",
@@ -528,7 +563,7 @@ sku_prefix_to_name = {
     "NOJ010":"Rosé Noir","NPX022":"Merry Charm","NPF022":"Holiday Sparkl","NOF020":"Garnet Muse","NOF019":"Twinkle Christmas",
     "NOJ011":"Snowy Comet","NOX013":"Christmas Village","NOJ009":"Reindeer Glow","NIX002":"Golden Orchid",
     "NPJ014":"Snow Pixie","NPJ018":"Frost Ruby","NPJ017":"Starlit Rift","NPF021":"Candy Cane","NPJ016":"Fairy Nectar",
-    "NPJ015":"Icy Viper","NOX014":"Taro Petal","NVT001":"Tool Kits",
+    "NPJ015":"Icy Viper","NOX014":"Taro Petal","NVT001":"Tool Kits","NVT002":"Tool Kits","NSB001":"Storage Box","NOB001":"Organizer Binder","NOB002":"Organizer Binder",
     "NF001":"Free Giveaway","NIF001":"Lilac Veil","NIF002":"Gingerbread","NOX015":"Glitter Doll","NOJ012":"Winery Flame",
     "NOF021":"Velvet Ribbon","NPX024":"Rose Wine","NPX023":"Blooming Kiss","NMF001":"Cherry Crush","NBX001":"Ballet Petal",
     "NMF003":"Royal Treasure","NMF002":"Safari Princess","NOJ013":"Midnight Denim","NOJ014":"Imperial Frost",
@@ -553,7 +588,7 @@ sku_prefix_to_name = {
     "NOF034":"Golden Hibiscus","NOF033":"Jade Garden","NOJ023":"Mermaid Shell","NOJ024":"Sunset Treasure","NBX003":"Jelly Petal","NWF003":"Silk Blossom","NWF004":"Melon Petal",
     "NVJ002":"Mochi Blossom","NOJ025":"Petal Empress","NVJ003":"Petal Throne","NWX003":"Aloha Bloom","NOX026":"Papaya Bloom","NOF035":"Ocean Picnic","NOJ026":"Aqua Taffy","NOX027":"Coral Foam","NOJ027":"Opal Dynasty",
     # 无尺寸款 SKU
-    "NB001":"Organizer Binder","NVT001":"TOOLKITS",
+    "NOB001":"Organizer Binder","NVT001":"TOOLKITS",
 }
 updated_mapping = dict(sku_prefix_to_name)
 
@@ -563,6 +598,23 @@ new_sku_prefix = {
 }
 
 SIZELESS_SKUS = {"NF001", "NB001"}
+
+# ============================================================================
+# B链产品 SKU 对照表
+# NVT001/NVT002 = 工具包 Toolkits
+# NSB001        = 美甲折叠盒 Storage Box
+# NOB001/NOB002 = Organizer Binder 美甲册
+# ============================================================================
+B_CHAIN_SKU_MAP = {
+    "NVT001": "工具包 Toolkits",
+    "NVT002": "工具包 Toolkits",
+    "NSB001": "美甲折叠盒 Storage Box",
+    "NOB001": "Organizer Binder 美甲册",
+    "NOB002": "Organizer Binder 美甲册",
+}
+B_CHAIN_SKUS_SET = set(B_CHAIN_SKU_MAP.keys())
+B_CHAIN_RE = re.compile(r'\b(' + '|'.join(B_CHAIN_SKUS_SET) + r')\b')
+QTY_WITH_TRACKING = re.compile(r'\b([1-9]\d{0,2})\s+\d{15,20}\b')
 
 # ============================================================================
 # 解析工具函数
@@ -621,9 +673,6 @@ def expand_bundle(counter: dict, sku_with_size: str, qty: int):
 
 
 def count_choose_sets_items(text: str) -> int:
-    # Choose N Sets 段落:每个套装下面跟若干行,每行最后一个数字是该子项数量。
-    # 启发式:从每个 'Choose N Sets' 出现位置往后,直到下一个正式 SKU 或下一个 Choose 段落,
-    # 在这段范围内累加 (数量, 18位订单ID) 配对的"数量"。
     total = 0
     positions = [m.start() for m in CHOOSE_SETS_RE.finditer(text)]
     if not positions:
@@ -712,7 +761,25 @@ else:
     if choose_sets_units > 0:
         sku_counts['__CHOOSE_SETS__'] += choose_sets_units
 
-    total_qty = sum(sku_counts.values())
+    # 提取 B链产品数量
+    b_chain_counts = defaultdict(int)
+    for m in B_CHAIN_RE.finditer(text_fixed):
+        sku = m.group(1)
+        after = text_fixed[m.end(): m.end() + 300]
+        mq = QTY_WITH_TRACKING.search(after)
+        if mq:
+            qty = int(mq.group(1))
+        else:
+            mq2 = QTY_AFTER.search(after)
+            qty = int(mq2.group(1)) if mq2 else 1
+        b_chain_counts[sku] += qty
+
+    b_chain_agg = defaultdict(int)
+    for sku, qty in b_chain_counts.items():
+        b_chain_agg[B_CHAIN_SKU_MAP[sku]] += qty
+    b_chain_total = sum(b_chain_counts.values())
+
+    total_qty = sum(sku_counts.values()) + b_chain_total
     expected_with_bundle = expected_total + bundle_extra
 
     # ========== 构建 DataFrame ==========
@@ -770,7 +837,6 @@ else:
         special_qty = int(pivot[pivot["库位"].str.startswith("无库位")]["Total"].sum()) \
                       if not pivot.empty else 0
 
-        # 状态条
         if expected_total == 0:
             st.markdown("""
             <div class="status-bar warning">
@@ -796,7 +862,6 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-        # KPI 数字卡
         st.markdown(f"""
         <div class="kpi-grid">
             <div class="kpi-card primary">
@@ -807,7 +872,7 @@ else:
             <div class="kpi-card success">
                 <div class="kpi-label">实际提取</div>
                 <div class="kpi-value">{total_qty}</div>
-                <div class="kpi-sub">含 bundle 拆分</div>
+                <div class="kpi-sub">含 bundle + B链</div>
             </div>
             <div class="kpi-card">
                 <div class="kpi-label">普通甲片</div>
@@ -819,10 +884,14 @@ else:
                 <div class="kpi-value">{special_qty}</div>
                 <div class="kpi-sub">无尺寸/无库位</div>
             </div>
+            <div class="kpi-card bchain">
+                <div class="kpi-label">B链产品</div>
+                <div class="kpi-value">{b_chain_total}</div>
+                <div class="kpi-sub">工具包/折叠盒/册</div>
+            </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # 提取明细卡
         st.markdown(f"""
         <div class="detail-section">
             <div class="detail-section-title">📋 提取明细</div>
@@ -842,10 +911,13 @@ else:
                 <span class="detail-label">🔗 bundle 拆分多出件数</span>
                 <span class="detail-value">+{bundle_extra} 件</span>
             </div>
+            <div class="detail-row">
+                <span class="detail-label">🛍️ B链产品合计</span>
+                <span class="detail-value blue">{b_chain_total} 件</span>
+            </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # 未识别 SKU 提示
         unknown_prefix_list = []
         for sku in sku_counts.keys():
             prefix = sku.split("-")[0] if "-" in sku else sku
@@ -870,7 +942,6 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-        # 缺库位提示
         truly_unknown = pivot[pivot["库位"] == "未识别库位"]
         if not truly_unknown.empty:
             names = "、".join(truly_unknown['Product Name'].tolist())
@@ -881,7 +952,6 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-        # 特殊款提示
         special_rows = pivot[pivot["库位"] == "无库位(特殊款)"]
         if not special_rows.empty:
             special_names = "、".join(special_rows["Product Name"].tolist())
@@ -922,14 +992,12 @@ else:
 
         pivot = pivot[["库位", "Product Name", "S", "M", "L", "Total"]]
 
-        # 行高亮
         prefix_lookup = {name: sku_p for sku_p, name in updated_mapping.items()}
 
         def highlight_row(row):
             loc = str(row["库位"])
             name = str(row["Product Name"])
             prefix = prefix_lookup.get(name, "")
-
             if loc == "未识别库位":
                 return ['background-color: #fef5e7'] * len(row)
             if loc == "无库位(特殊款)":
@@ -950,7 +1018,6 @@ else:
             height=min(600, 50 + len(pivot) * 35)
         )
 
-        # 颜色图例
         st.markdown("""
         <div style="display:flex; gap:18px; flex-wrap:wrap; padding:10px 0; font-size:12px; color:#8a7170;">
             <div style="display:flex; align-items:center; gap:6px;">
@@ -968,15 +1035,53 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        # 下载
+        # ========== 下载(合并 CSV:美甲拣货 + B链产品) ==========
         st.markdown('<div style="margin-top:18px;"></div>', unsafe_allow_html=True)
-        csv = pivot.to_csv(index=False).encode("utf-8-sig")
+
+        if b_chain_agg:
+            # 拼接：主表 + 空行 + B链标题行 + B链数据行，共用同一列结构
+            cols = pivot.columns.tolist()
+            empty_row = pd.DataFrame([[""] * len(cols)], columns=cols)
+            section_label = pd.DataFrame(
+                [["─── B链产品 ───"] + [""] * (len(cols) - 1)],
+                columns=cols
+            )
+            b_rows = pd.DataFrame(
+                [[name] + ["", "", "", "", qty] for name, qty in sorted(b_chain_agg.items())],
+                columns=cols
+            )
+            combined_df = pd.concat([pivot, empty_row, section_label, b_rows], ignore_index=True)
+            csv = combined_df.to_csv(index=False).encode("utf-8-sig")
+        else:
+            csv = pivot.to_csv(index=False).encode("utf-8-sig")
+
         st.download_button(
-            "📥 下载产品明细 CSV",
+            "📥 下载拣货明细 CSV（含 B链）" if b_chain_agg else "📥 下载产品明细 CSV",
             data=csv,
             file_name="product_summary_named.csv",
             mime="text/csv"
         )
+
+        # ========== B链产品展示区（页面呈现，无单独下载） ==========
+        if b_chain_agg:
+            st.markdown('<div class="nv-divider"></div>', unsafe_allow_html=True)
+            st.markdown("""
+            <div class="bchain-wrap">
+                <div class="bchain-header">🛍️ B链产品</div>
+            """, unsafe_allow_html=True)
+
+            b_chain_df = pd.DataFrame(
+                sorted(b_chain_agg.items()),
+                columns=["产品名称", "数量"]
+            )
+            st.dataframe(
+                b_chain_df,
+                use_container_width=True,
+                hide_index=True,
+                height=50 + len(b_chain_df) * 38
+            )
+
+            st.markdown("</div>", unsafe_allow_html=True)
 
     else:
         st.markdown("""
