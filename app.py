@@ -577,7 +577,7 @@ sku_prefix_to_name = {
     "NPF023":"Fairy Garden","NBJ001":"Stone Petal","NOF027":"Acai Bloom","NPJ021":"Champagne Blossom","NPJ020":"Citrus Daisy",
     "NOJ018":"Ribbon Lily","NVF005":"Dreamy Sakura","NOF037":"Tropical Spritz","NOF039":"Citrus Pop","NVJ005":"Guava Nectar",
     "NDX003":"Meadow Petals","NOX018":"Strawberry Kiss","NOJ020":"Raibow Bloom","NPF026":"Seaside Sundae","NVJ001":"Prism Aura",
-    "NDX005":"Midnight Glam","NDX004":"Starry Tide","NMF006":"Pastel Jungle","NWF007":"Peachy Seaside","NOF003":"Peach Pop","NOJ031":"Palm Mojito",
+    "NDX005":"Midnight Glam","NDX004":"Starry Tide","NWF006":"Pastel Jungle","NWF007":"Peachy Seaside","NOF003":"Peach Pop","NOJ031":"Palm Mojito",
     "NPX027":"Hibiscus Tide","NPX026":"Ocean Yuzu","NWX001":"Seashell Sorbet","NOF026":"Island Paradise","NPF024":"Tropical Breeze",
     "NOJ021":"Petal Gelato","AUCTION":"Picks Any 2 Sets, 50 g, Choose Your Size",
     "NVF003":"Apricot Cream","NMJ005":"Glossy Aura","NGX001":"Seafoam Jewel","NOF028":"Floral Cherry","NTX001":"Coraline Glow",
