@@ -573,7 +573,7 @@ sku_prefix_to_name = {
     "NOX016":"Cherry Ribbon","NOX017":"Ruby Bow","NMF004":"Lavender Bloom","NDX002":"Cloudy Knit","NMJ003":"Gothic Rose",
     "NOF025":"Cherry Romance","NMJ001":"Milky Cloud",
     "NMX001":"Petal Muse","NOF024":"Floral Muse","NVX001":"Sakura Macaron","NVF002":"Dreamy Bloom","NOJ017":"Floral Garden",
-    "NOJ016":"Jade Blossom","NVX002":"Pastel Bloom",
+    "NOJ016":"Jade Blossom","NVX002":"Pastel Bloom","NVF008":"Glazed Ballet","NWF008":"Waikiki Blossom","NWF009":"Petal French",
     "NPF023":"Fairy Garden","NBJ001":"Stone Petal","NOF027":"Acai Bloom","NPJ021":"Champagne Blossom","NPJ020":"Citrus Daisy",
     "NOJ018":"Ribbon Lily","NVF005":"Dreamy Sakura","NOF037":"Tropical Spritz","NOF039":"Citrus Pop","NVJ005":"Guava Nectar",
     "NDX003":"Meadow Petals","NOX018":"Strawberry Kiss","NOJ020":"Raibow Bloom","NPF026":"Seaside Sundae","NVJ001":"Prism Aura",
