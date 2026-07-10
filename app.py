@@ -581,7 +581,7 @@ sku_prefix_to_name = {
     "NPX027":"Hibiscus Tide","NPX026":"Ocean Yuzu","NWX001":"Seashell Sorbet","NOF026":"Island Paradise","NPF024":"Tropical Breeze",
     "NOJ021":"Petal Gelato","AUCTION":"Picks Any 2 Sets, 50 g, Choose Your Size",
     "NVF003":"Apricot Cream","NMJ005":"Glossy Aura","NGX001":"Seafoam Jewel","NOF028":"Floral Cherry","NTX001":"Coraline Glow",
-    "NOX020":"Floral Drip","NOX019":"Mint Petal","NOF030":"Citrus Veil",
+    "NOX020":"Floral Drip","NOX019":"Mint Petal","NOF030":"Citrus Veil","NOJ032":"Lavender Prism"
     "NOF031":"Lady Cherry","NOF029":"Marine Glow","NDJ002":"Aqua Blush","NWF001":"Berry Bowtie","NTF001":"Pastel Coast","NWF005":"Sunflower Safari","NOJ028":"Cowgirl Charm","NOJ029":"Pearl Tide",
     "NOX025":"Golden Nectar","NWX002":"Meadow Daisy","NOX023":"Mermaid Glam","NOX021":"Peach Ember","NOX022":"Sunlit Petals",
     "NOX024":"Teal Blossom","NVF006":"Lime Petals","NOJ022":"Leaf Petals","NOF032":"Tidal Flower","NWF002":"Tropic Shell","NMX004":"MYSTERY BOX",
