@@ -1,6 +1,6 @@
 """
 ================================================================================
-NailVesta 拣货单汇总工具
+NailVesta 拣货单汇总工具（精简版，无 CSS 美化）
 ================================================================================
 
 【用途】
@@ -10,59 +10,14 @@ NailVesta 拣货单汇总工具
 
 【输入】
 1. 必选:拣货 PDF(TikTok Shop 后台导出)
-   - PDF 头部含 "Item quantity: XXX",作为对账基准
-   - 每行 SKU 形如 NPF014-M、NDJ002-S
-   - bundle 形式 SKU 形如 NPF014NPJ016-M(多个 SKU 拼接 + 单个尺寸)
 2. 可选:产品图册 CSV(含 SKU / 库位 两列)
-   - 上传后会自动按库位 A-01-01 → B-XX-XX 的顺序排序
 
-【输出】
-- 屏幕上的对账面板(PDF 标注 vs 实际提取)
-- 按库位/字母排序的产品明细表(库位、产品名、S/M/L、Total)
-- B链产品汇总(产品名、数量)
-- 可下载的合并 CSV 文件(美甲拣货 + B链产品两段)
-
-【对账逻辑(核心)】
-PDF 头部的 Item quantity 把所有"行"都算一份,但实际拣货时:
-1. bundle SKU(如 NPF014NPJ016-M qty=1)在 PDF 里算 1 件,
-   但实际要拣 2 件 → bundle_extra 记录拆分多出来的件数
-2. NF001 (Free Giveaway) 是免费赠品,无尺寸,PDF 里独立成行
-3. NB001 (Organizer Binder) 是收纳册,无尺寸,PDF 里独立成行
-4. "Choose N Sets" 段落用占位 SKU(1/2/3),无具体款式信息,
-   只能按段落汇总成一行"混合套装"
-5. B链产品(NVT001/002、NSB001、NOB001/002)单独汇总在 B链产品区域
-
-最终对账公式:
-    期望件数 = PDF 标注数量 + bundle 拆分多出件数
-    实际件数 = 所有提取出的 SKU 件数总和(含 NF001/NB001/Choose Sets/B链)
-    两者应相等
-
-【特殊 SKU 处理】
-| SKU       | 名称              | 尺寸  | 库位      | 处理方式            |
-|-----------|------------------|------|----------|--------------------|
-| NF001     | Free Giveaway    | 无   | 无       | 独立成行,灰色背景  |
-| NB001     | Organizer Binder | 无   | 无       | 独立成行,灰色背景  |
-| 1/2/3...  | Choose N Sets    | 无   | 无       | 段落汇总,灰色背景  |
-| NVT001/2  | 工具包 Toolkits  | 无   | 无       | B链产品区域        |
-| NSB001    | 美甲折叠盒       | 无   | 无       | B链产品区域        |
-| NOB001/2  | Organizer Binder | 无   | 无       | B链产品区域        |
-
-【表格颜色含义】
-- 🟡 黄色:真正缺库位信息,需补充图册 CSV
-- ⚫ 灰色:无尺寸/无库位的特殊款(NF001 / NB001 / Choose Sets)
-- 🌸 粉色:近期新款 SKU(在 new_sku_prefix 列表中)
-- 白色:正常款
-
-【依赖】
-streamlit, pandas, pymupdf (fitz)
-
-【维护】⚠️ 重要:有新款上架时,请记得更新 GitHub 代码中的 SKU 对照表!
-- 新增甲片款式 → 在 sku_prefix_to_name 加一行映射
-- 新增近期新款 → 同时加入 new_sku_prefix(用于粉色标记)
-- 新增无尺寸 SKU → 同时加入 sku_prefix_to_name 和 SIZELESS_SKUS,
-  并增加对应的正则匹配(参考 NB_ONLY 的写法)
-- 新增 B链产品 → 在 B_CHAIN_SKU_MAP 加一行映射
-- 改完后务必 push 到 GitHub,否则线上工具仍是旧版,会出现"❓未识别"
+【维护】⚠️ 有新款上架时,记得更新下面的 SKU 对照表:
+- 新增甲片款式 → sku_prefix_to_name 加一行
+- 新增近期新款 → new_sku_prefix 加一行(用于标记"新款")
+- 新增无尺寸 SKU → sku_prefix_to_name + SIZELESS_SKUS
+- 新增 B链产品 → B_CHAIN_SKU_MAP 加一行
+- 改完后务必 push 到 GitHub
 ================================================================================
 """
 
@@ -72,445 +27,33 @@ import re
 import fitz
 from collections import defaultdict
 
-# ============================================================================
-# 页面配置 + 全局样式
-# ============================================================================
-st.set_page_config(
-    page_title="NailVesta 拣货单工具",
-    page_icon="💅",
-    layout="wide",
-    initial_sidebar_state="collapsed"
+st.set_page_config(page_title="NailVesta 拣货单工具", page_icon="💅", layout="wide")
+
+st.title("💅 NailVesta 拣货单汇总工具")
+st.caption("智能拆分 bundle · 自动对账 · 按库位排序")
+
+st.info(
+    "📢 新款上架提醒:请及时更新代码中的 `sku_prefix_to_name` / `new_sku_prefix` / "
+    "`B_CHAIN_SKU_MAP`,push 后线上自动同步。"
 )
-
-# ---------- 自定义 CSS ----------
-st.markdown("""
-<style>
-    /* 隐藏默认元素 */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    .stDeployButton {display: none;}
-    header[data-testid="stHeader"] {background: transparent;}
-
-    /* === 全局背景:奶油白 → 莓粉 渐变 === */
-    .stApp {
-        background:
-            radial-gradient(circle at 0% 0%, #fff5f7 0%, transparent 50%),
-            radial-gradient(circle at 100% 0%, #fef0f5 0%, transparent 50%),
-            radial-gradient(circle at 50% 100%, #fdf3f8 0%, transparent 50%),
-            #fefcfb;
-    }
-
-    /* === 主容器 === */
-    .block-container {
-        padding-top: 2.5rem;
-        padding-bottom: 4rem;
-        max-width: 1180px;
-    }
-
-    /* === Hero 标题区 === */
-    .hero-wrap {
-        background: linear-gradient(135deg, #ffffff 0%, #fff8f5 50%, #fef2f5 100%);
-        border-radius: 28px;
-        padding: 40px 48px;
-        margin-bottom: 28px;
-        box-shadow:
-            0 4px 24px rgba(232, 165, 180, 0.12),
-            0 1px 3px rgba(232, 165, 180, 0.08);
-        border: 1px solid rgba(232, 165, 180, 0.18);
-        position: relative;
-        overflow: hidden;
-    }
-    .hero-wrap::before {
-        content: '';
-        position: absolute;
-        top: -50%;
-        right: -10%;
-        width: 300px;
-        height: 300px;
-        background: radial-gradient(circle, rgba(255, 200, 215, 0.25) 0%, transparent 70%);
-        pointer-events: none;
-    }
-    .hero-title {
-        font-size: 34px;
-        font-weight: 700;
-        background: linear-gradient(135deg, #d4849a 0%, #c46e89 50%, #b8859e 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        margin: 0 0 8px 0;
-        letter-spacing: -0.5px;
-        position: relative;
-    }
-    .hero-subtitle {
-        font-size: 15px;
-        color: #8a7170;
-        margin: 0;
-        font-weight: 400;
-        letter-spacing: 0.2px;
-        position: relative;
-    }
-    .hero-tag {
-        display: inline-block;
-        background: linear-gradient(135deg, #fdd9e0 0%, #fce4ec 100%);
-        color: #b85a78;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-        margin-bottom: 14px;
-        text-transform: uppercase;
-    }
-
-    /* === 卡片样式 === */
-    .nv-card {
-        background: white;
-        border-radius: 20px;
-        padding: 24px 28px;
-        margin-bottom: 18px;
-        box-shadow: 0 2px 12px rgba(232, 165, 180, 0.08);
-        border: 1px solid rgba(232, 165, 180, 0.12);
-    }
-    .nv-card-title {
-        font-size: 15px;
-        font-weight: 600;
-        color: #6b4f55;
-        margin: 0 0 14px 0;
-        letter-spacing: 0.2px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    /* === 维护提醒条 === */
-    .reminder-bar {
-        background: linear-gradient(90deg, #fef5e7 0%, #fef0f0 100%);
-        border-left: 4px solid #e8a5a5;
-        border-radius: 12px;
-        padding: 12px 18px;
-        margin-bottom: 22px;
-        font-size: 13px;
-        color: #7a5a5e;
-        line-height: 1.6;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .reminder-bar code {
-        background: rgba(212, 132, 154, 0.12);
-        color: #b85a78;
-        padding: 1px 7px;
-        border-radius: 5px;
-        font-size: 12px;
-        font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
-    }
-
-    /* === 文件上传区美化 === */
-    [data-testid="stFileUploader"] {
-        background: linear-gradient(135deg, #ffffff 0%, #fef8f9 100%);
-        border-radius: 16px;
-        padding: 4px;
-    }
-    [data-testid="stFileUploader"] section {
-        background: rgba(255, 245, 247, 0.5) !important;
-        border: 2px dashed rgba(212, 132, 154, 0.35) !important;
-        border-radius: 14px !important;
-        padding: 24px !important;
-        transition: all 0.3s ease;
-    }
-    [data-testid="stFileUploader"] section:hover {
-        border-color: rgba(212, 132, 154, 0.6) !important;
-        background: rgba(255, 235, 240, 0.4) !important;
-    }
-    [data-testid="stFileUploader"] button {
-        background: linear-gradient(135deg, #e8a5a5 0%, #d4849a 100%) !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 10px !important;
-        padding: 8px 18px !important;
-        font-weight: 500 !important;
-        font-size: 13px !important;
-        box-shadow: 0 2px 6px rgba(212, 132, 154, 0.25) !important;
-        transition: all 0.2s ease !important;
-    }
-    [data-testid="stFileUploader"] button:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 10px rgba(212, 132, 154, 0.35) !important;
-    }
-    [data-testid="stFileUploaderFile"] {
-        background: linear-gradient(135deg, #fef0f5 0%, #fff5f7 100%);
-        border-radius: 10px;
-        padding: 8px 12px !important;
-    }
-
-    /* === Radio 美化 === */
-    [data-testid="stRadio"] label {
-        font-size: 14px !important;
-        color: #6b4f55 !important;
-        font-weight: 500 !important;
-    }
-    [data-testid="stRadio"] [role="radiogroup"] {
-        gap: 8px !important;
-    }
-    [data-testid="stRadio"] [role="radiogroup"] label {
-        background: white;
-        padding: 8px 16px;
-        border-radius: 10px;
-        border: 1px solid rgba(212, 132, 154, 0.2);
-        transition: all 0.2s ease;
-        cursor: pointer;
-    }
-    [data-testid="stRadio"] [role="radiogroup"] label:hover {
-        border-color: rgba(212, 132, 154, 0.5);
-        background: #fef8f9;
-    }
-
-    /* === KPI 数字卡 === */
-    .kpi-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        gap: 14px;
-        margin-bottom: 20px;
-    }
-    .kpi-card {
-        background: white;
-        border-radius: 16px;
-        padding: 18px 22px;
-        border: 1px solid rgba(232, 165, 180, 0.12);
-        box-shadow: 0 2px 10px rgba(232, 165, 180, 0.06);
-        transition: all 0.2s ease;
-    }
-    .kpi-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 18px rgba(232, 165, 180, 0.14);
-    }
-    .kpi-label {
-        font-size: 11px;
-        color: #a8888a;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        font-weight: 600;
-        margin-bottom: 6px;
-    }
-    .kpi-value {
-        font-size: 30px;
-        font-weight: 700;
-        color: #6b4f55;
-        line-height: 1;
-        margin-bottom: 4px;
-        letter-spacing: -0.5px;
-    }
-    .kpi-sub {
-        font-size: 12px;
-        color: #a8888a;
-        font-weight: 400;
-    }
-    .kpi-card.success { border-left: 4px solid #a8d5ba; }
-    .kpi-card.success .kpi-value { color: #4a8061; }
-    .kpi-card.primary { border-left: 4px solid #d4849a; }
-    .kpi-card.primary .kpi-value { color: #b85a78; }
-    .kpi-card.muted { border-left: 4px solid #d4c5c0; }
-    .kpi-card.warning { border-left: 4px solid #e8c587; }
-    .kpi-card.warning .kpi-value { color: #b58a3a; }
-    .kpi-card.bchain { border-left: 4px solid #a5c8e8; }
-    .kpi-card.bchain .kpi-value { color: #3a6a8a; }
-
-    /* === 对账状态条 === */
-    .status-bar {
-        border-radius: 16px;
-        padding: 16px 22px;
-        margin: 12px 0 22px 0;
-        font-weight: 500;
-        font-size: 14px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-    }
-    .status-bar.success {
-        background: linear-gradient(135deg, #f0f9f3 0%, #e6f5ec 100%);
-        color: #4a8061;
-        border: 1px solid rgba(168, 213, 186, 0.4);
-    }
-    .status-bar.error {
-        background: linear-gradient(135deg, #fef0f0 0%, #fde6e6 100%);
-        color: #b85a5a;
-        border: 1px solid rgba(232, 165, 165, 0.4);
-    }
-    .status-bar.warning {
-        background: linear-gradient(135deg, #fef9ec 0%, #fdf3d9 100%);
-        color: #8a6a2a;
-        border: 1px solid rgba(232, 197, 135, 0.4);
-    }
-    .status-icon {
-        font-size: 20px;
-    }
-
-    /* === 明细块小标题 === */
-    .detail-section {
-        background: linear-gradient(135deg, #fefaf9 0%, #fdf5f7 100%);
-        border-radius: 12px;
-        padding: 14px 18px;
-        margin: 12px 0;
-        border: 1px solid rgba(232, 165, 180, 0.1);
-    }
-    .detail-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 5px 0;
-        font-size: 13px;
-        color: #6b4f55;
-    }
-    .detail-row:not(:last-child) {
-        border-bottom: 1px dashed rgba(212, 132, 154, 0.18);
-    }
-    .detail-label { color: #8a7170; }
-    .detail-value { font-weight: 600; color: #6b4f55; }
-    .detail-value.pink { color: #b85a78; }
-    .detail-value.blue { color: #3a6a8a; }
-    .detail-section-title {
-        font-size: 12px;
-        font-weight: 700;
-        color: #b85a78;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        margin-bottom: 8px;
-    }
-
-    /* === DataFrame 表格美化 === */
-    [data-testid="stDataFrame"] {
-        border-radius: 16px;
-        overflow: hidden;
-        border: 1px solid rgba(232, 165, 180, 0.18);
-        box-shadow: 0 2px 12px rgba(232, 165, 180, 0.06);
-    }
-
-    /* === 下载按钮 === */
-    [data-testid="stDownloadButton"] button {
-        background: linear-gradient(135deg, #d4849a 0%, #c46e89 100%) !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 12px !important;
-        padding: 10px 24px !important;
-        font-weight: 600 !important;
-        font-size: 14px !important;
-        box-shadow: 0 3px 10px rgba(196, 110, 137, 0.25) !important;
-        transition: all 0.25s ease !important;
-        letter-spacing: 0.3px;
-    }
-    [data-testid="stDownloadButton"] button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 16px rgba(196, 110, 137, 0.35) !important;
-    }
-
-    /* === Streamlit 默认 alert 美化兜底 === */
-    [data-testid="stAlert"] {
-        border-radius: 14px !important;
-        border: none !important;
-    }
-
-    /* === 分隔线 === */
-    .nv-divider {
-        height: 1px;
-        background: linear-gradient(90deg, transparent 0%, rgba(212, 132, 154, 0.25) 50%, transparent 100%);
-        margin: 28px 0;
-        border: none;
-    }
-
-    /* === 段落小标题 === */
-    .section-header {
-        font-size: 18px;
-        font-weight: 700;
-        color: #6b4f55;
-        margin: 24px 0 14px 0;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .section-header::before {
-        content: '';
-        width: 4px;
-        height: 18px;
-        background: linear-gradient(180deg, #d4849a 0%, #c46e89 100%);
-        border-radius: 2px;
-    }
-
-    /* === B链产品区域 === */
-    .bchain-wrap {
-        background: linear-gradient(135deg, #f0f6fb 0%, #e8f2f8 100%);
-        border-radius: 20px;
-        padding: 24px 28px;
-        margin-top: 8px;
-        border: 1px solid rgba(165, 200, 232, 0.35);
-        box-shadow: 0 2px 12px rgba(100, 160, 210, 0.07);
-    }
-    .bchain-header {
-        font-size: 18px;
-        font-weight: 700;
-        color: #2e5f80;
-        margin: 0 0 16px 0;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .bchain-header::before {
-        content: '';
-        width: 4px;
-        height: 18px;
-        background: linear-gradient(180deg, #6baed4 0%, #3a82aa 100%);
-        border-radius: 2px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ============================================================================
-# Hero 区
-# ============================================================================
-st.markdown("""
-<div class="hero-wrap">
-    <span class="hero-tag">✨ NailVesta Warehouse Tool</span>
-    <h1 class="hero-title">拣货单汇总工具 💅</h1>
-    <p class="hero-subtitle">
-        Smart picking & reconciliation · 智能拆分 bundle、自动对账、按库位排序
-    </p>
-</div>
-""", unsafe_allow_html=True)
-
-# ========== 维护提醒 ==========
-st.markdown("""
-<div class="reminder-bar">
-    <span style="font-size:18px;">📢</span>
-    <div>
-        <strong>新款上架提醒</strong>:有新款 SKU 上架时,请及时更新 GitHub 代码中的对照表
-        <code>sku_prefix_to_name</code> 与 <code>new_sku_prefix</code>;
-        新增 B链产品请更新 <code>B_CHAIN_SKU_MAP</code>,push 后线上自动同步。
-    </div>
-</div>
-""", unsafe_allow_html=True)
 
 # ============================================================================
 # 上传区
 # ============================================================================
-st.markdown('<div class="section-header">📁 文件上传</div>', unsafe_allow_html=True)
-
 col_up1, col_up2 = st.columns(2)
 
 with col_up1:
-    st.markdown('<div style="font-size:13px; color:#8a7170; margin-bottom:6px; font-weight:500;">📚 产品图册 CSV<span style="color:#c4c4c4; font-weight:400;"> · 可选</span></div>', unsafe_allow_html=True)
     catalog_file = st.file_uploader(
-        " ",
+        "📚 产品图册 CSV（可选，含 SKU / 库位 两列）",
         type=["csv"],
         key="catalog",
-        label_visibility="collapsed",
         help="包含 SKU 与库位列。上传后会按库位排序拣货单"
     )
 
 with col_up2:
-    st.markdown('<div style="font-size:13px; color:#8a7170; margin-bottom:6px; font-weight:500;">📤 拣货 PDF<span style="color:#d4849a; font-weight:600;"> · 必选</span></div>', unsafe_allow_html=True)
     uploaded_file = st.file_uploader(
-        " ",
+        "📤 拣货 PDF（必选）",
         type=["pdf"],
-        label_visibility="collapsed",
         help="TikTok Shop 后台导出的拣货 PDF"
     )
 
@@ -524,12 +67,7 @@ if catalog_file:
             catalog_df['库位'] = catalog_df['库位'].fillna('').astype(str).str.strip()
             valid = catalog_df[catalog_df['库位'] != '']
             sku_to_location = dict(zip(valid['SKU'], valid['库位']))
-            st.markdown(f"""
-            <div class="status-bar success">
-                <span class="status-icon">✅</span>
-                <span>已加载 <strong>{len(sku_to_location)}</strong> 个 SKU 的库位映射</span>
-            </div>
-            """, unsafe_allow_html=True)
+            st.success(f"✅ 已加载 {len(sku_to_location)} 个 SKU 的库位映射")
         else:
             st.warning("⚠️ 图册缺少 'SKU' 或 '库位' 列")
     except Exception as e:
@@ -601,9 +139,6 @@ SIZELESS_SKUS = {"NF001", "NB001"}
 
 # ============================================================================
 # B链产品 SKU 对照表
-# NVT001/NVT002 = 工具包 Toolkits
-# NSB001        = 美甲折叠盒 Storage Box
-# NOB001/NOB002 = Organizer Binder 美甲册
 # ============================================================================
 B_CHAIN_SKU_MAP = {
     "NVT001": "工具包 Toolkits",
@@ -703,22 +238,13 @@ def location_sort_key(loc: str):
 # 主逻辑
 # ============================================================================
 if not uploaded_file:
-    st.markdown("""
-    <div class="nv-card" style="text-align:center; padding: 50px 30px; background: linear-gradient(135deg, #ffffff 0%, #fef8f9 100%);">
-        <div style="font-size: 48px; margin-bottom: 12px;">📤</div>
-        <div style="font-size: 16px; color: #8a7170; font-weight: 500;">
-            等待上传拣货 PDF
-        </div>
-        <div style="font-size: 13px; color: #b0a0a0; margin-top: 6px;">
-            上传后将自动解析、拆分 bundle 并按库位排序
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.info("📤 等待上传拣货 PDF —— 上传后将自动解析、拆分 bundle 并按库位排序")
 
 else:
     raw = uploaded_file.read()
     doc = fitz.open(stream=raw, filetype="pdf")
     text = "\n".join([p.get_text("text") for p in doc])
+    doc.close()
     text = normalize_text(text)
 
     m_total = ITEM_QTY_RE.search(text)
@@ -829,8 +355,8 @@ else:
             return sku_to_location.get(prefix, "未识别库位")
         pivot["库位"] = pivot["SKU Prefix"].map(map_location)
 
-        # ========== 对账区:KPI 卡 ==========
-        st.markdown('<div class="section-header">📊 对账结果</div>', unsafe_allow_html=True)
+        # ========== 对账区 ==========
+        st.subheader("📊 对账结果")
 
         nail_qty = int(pivot[~pivot["库位"].str.startswith("无库位")]["Total"].sum()) \
                    if not pivot.empty else 0
@@ -838,85 +364,30 @@ else:
                       if not pivot.empty else 0
 
         if expected_total == 0:
-            st.markdown("""
-            <div class="status-bar warning">
-                <span class="status-icon">⚠️</span>
-                <span>未识别到 PDF 中的 Item quantity,无法进行对账校验</span>
-            </div>
-            """, unsafe_allow_html=True)
+            st.warning("⚠️ 未识别到 PDF 中的 Item quantity,无法进行对账校验")
         elif total_qty == expected_with_bundle or total_qty == expected_total:
-            st.markdown(f"""
-            <div class="status-bar success">
-                <span class="status-icon">✨</span>
-                <span><strong>对账成功</strong> · PDF 标注 {expected_total}
-                {'+ bundle 拆分 ' + str(bundle_extra) if bundle_extra else ''}
-                = 实际提取 {total_qty} 件 ✅</span>
-            </div>
-            """, unsafe_allow_html=True)
+            msg = f"✨ 对账成功 · PDF 标注 {expected_total}"
+            if bundle_extra:
+                msg += f" + bundle 拆分 {bundle_extra}"
+            msg += f" = 实际提取 {total_qty} 件 ✅"
+            st.success(msg)
         else:
             diff = total_qty - expected_with_bundle
-            st.markdown(f"""
-            <div class="status-bar error">
-                <span class="status-icon">❌</span>
-                <span><strong>对账不一致</strong> · 期望 {expected_with_bundle},实际 {total_qty},差 {diff:+d} 件</span>
-            </div>
-            """, unsafe_allow_html=True)
+            st.error(f"❌ 对账不一致 · 期望 {expected_with_bundle},实际 {total_qty},差 {diff:+d} 件")
 
-        st.markdown(f"""
-        <div class="kpi-grid">
-            <div class="kpi-card primary">
-                <div class="kpi-label">PDF 标注</div>
-                <div class="kpi-value">{expected_total}</div>
-                <div class="kpi-sub">Item quantity</div>
-            </div>
-            <div class="kpi-card success">
-                <div class="kpi-label">实际提取</div>
-                <div class="kpi-value">{total_qty}</div>
-                <div class="kpi-sub">含 bundle + B链</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-label">普通甲片</div>
-                <div class="kpi-value">{nail_qty}</div>
-                <div class="kpi-sub">有库位</div>
-            </div>
-            <div class="kpi-card muted">
-                <div class="kpi-label">特殊款</div>
-                <div class="kpi-value">{special_qty}</div>
-                <div class="kpi-sub">无尺寸/无库位</div>
-            </div>
-            <div class="kpi-card bchain">
-                <div class="kpi-label">B链产品</div>
-                <div class="kpi-value">{b_chain_total}</div>
-                <div class="kpi-sub">工具包/折叠盒/册</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        k1, k2, k3, k4, k5 = st.columns(5)
+        k1.metric("PDF 标注", expected_total)
+        k2.metric("实际提取", total_qty)
+        k3.metric("普通甲片", nail_qty)
+        k4.metric("特殊款", special_qty)
+        k5.metric("B链产品", b_chain_total)
 
-        st.markdown(f"""
-        <div class="detail-section">
-            <div class="detail-section-title">📋 提取明细</div>
-            <div class="detail-row">
-                <span class="detail-label">🎁 Free Giveaway (NF001)</span>
-                <span class="detail-value pink">{mystery_units} 件</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">📒 Organizer Binder (NB001)</span>
-                <span class="detail-value pink">{binder_units} 件</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">🎀 Choose Sets(混合套装)</span>
-                <span class="detail-value pink">{choose_sets_units} 件</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">🔗 bundle 拆分多出件数</span>
-                <span class="detail-value">+{bundle_extra} 件</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">🛍️ B链产品合计</span>
-                <span class="detail-value blue">{b_chain_total} 件</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.expander("📋 提取明细"):
+            st.write(f"🎁 Free Giveaway (NF001):{mystery_units} 件")
+            st.write(f"📒 Organizer Binder (NB001):{binder_units} 件")
+            st.write(f"🎀 Choose Sets(混合套装):{choose_sets_units} 件")
+            st.write(f"🔗 bundle 拆分多出件数:+{bundle_extra} 件")
+            st.write(f"🛍️ B链产品合计:{b_chain_total} 件")
 
         unknown_prefix_list = []
         for sku in sku_counts.keys():
@@ -925,52 +396,28 @@ else:
                 if prefix not in unknown_prefix_list:
                     unknown_prefix_list.append(prefix)
         if unknown_prefix_list:
-            sku_chips = " ".join([
-                f'<code style="background:#fde6e6; color:#b85a5a; padding:3px 9px; border-radius:6px; font-size:12px; margin:2px;">{p}</code>'
-                for p in unknown_prefix_list
-            ])
-            st.markdown(f"""
-            <div class="status-bar error">
-                <span class="status-icon">🚨</span>
-                <div>
-                    <strong>发现 {len(unknown_prefix_list)} 个未识别的 SKU 前缀</strong><br>
-                    <div style="margin:6px 0;">{sku_chips}</div>
-                    <span style="font-size:12px; opacity:0.85;">
-                        请尽快在 GitHub 仓库中更新 <code style="background:rgba(184,90,90,0.12); padding:1px 5px; border-radius:4px;">sku_prefix_to_name</code>,push 后重新部署
-                    </span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.error(
+                f"🚨 发现 {len(unknown_prefix_list)} 个未识别的 SKU 前缀:"
+                f"{', '.join(unknown_prefix_list)} —— 请尽快在代码中更新 sku_prefix_to_name,push 后重新部署"
+            )
 
         truly_unknown = pivot[pivot["库位"] == "未识别库位"]
         if not truly_unknown.empty:
             names = "、".join(truly_unknown['Product Name'].tolist())
-            st.markdown(f"""
-            <div class="status-bar warning">
-                <span class="status-icon">⚠️</span>
-                <span><strong>{len(truly_unknown)} 个款式没有库位信息</strong>(需补充图册 CSV):{names}</span>
-            </div>
-            """, unsafe_allow_html=True)
+            st.warning(f"⚠️ {len(truly_unknown)} 个款式没有库位信息(需补充图册 CSV):{names}")
 
         special_rows = pivot[pivot["库位"] == "无库位(特殊款)"]
         if not special_rows.empty:
             special_names = "、".join(special_rows["Product Name"].tolist())
-            st.markdown(f"""
-            <div class="status-bar warning" style="background:linear-gradient(135deg,#f5f0f5 0%,#ede5ec 100%); color:#6a4f60; border-color:rgba(180,150,170,0.3);">
-                <span class="status-icon">ℹ️</span>
-                <span><strong>{len(special_rows)} 类无尺寸/特殊款</strong>不参与库位拣货:{special_names}(需单独处理)</span>
-            </div>
-            """, unsafe_allow_html=True)
+            st.info(f"ℹ️ {len(special_rows)} 类无尺寸/特殊款不参与库位拣货:{special_names}(需单独处理)")
 
         # ========== 排序模式 ==========
-        st.markdown('<div class="nv-divider"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="section-header">📋 拣货明细表</div>', unsafe_allow_html=True)
+        st.subheader("📋 拣货明细表")
 
         sort_mode = st.radio(
             "排序方式",
             ["📦 按库位顺序(拣货模式)", "🔤 按字母顺序(A-Z)"],
             horizontal=True,
-            label_visibility="collapsed",
             help="拣货模式:从 A-01-01 顺着货架走一遍即可。字母顺序:按产品名 A-Z 排列,方便查找"
         )
 
@@ -1006,10 +453,7 @@ else:
                 return ['background-color: #fff0f5'] * len(row)
             return [''] * len(row)
 
-        pivot_styled = pivot.style.apply(highlight_row, axis=1).set_properties(**{
-            'font-size': '13px',
-            'color': '#6b4f55',
-        })
+        pivot_styled = pivot.style.apply(highlight_row, axis=1)
 
         st.dataframe(
             pivot_styled,
@@ -1018,28 +462,10 @@ else:
             height=min(600, 50 + len(pivot) * 35)
         )
 
-        st.markdown("""
-        <div style="display:flex; gap:18px; flex-wrap:wrap; padding:10px 0; font-size:12px; color:#8a7170;">
-            <div style="display:flex; align-items:center; gap:6px;">
-                <span style="width:14px; height:14px; background:#fff0f5; border:1px solid rgba(212,132,154,0.3); border-radius:3px;"></span>
-                <span>新款</span>
-            </div>
-            <div style="display:flex; align-items:center; gap:6px;">
-                <span style="width:14px; height:14px; background:#fef5e7; border:1px solid rgba(232,197,135,0.4); border-radius:3px;"></span>
-                <span>缺库位信息</span>
-            </div>
-            <div style="display:flex; align-items:center; gap:6px;">
-                <span style="width:14px; height:14px; background:#f5f0f5; border:1px solid rgba(180,150,170,0.3); border-radius:3px;"></span>
-                <span>无尺寸特殊款</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.caption("🌸 粉色=新款　🟡 黄色=缺库位信息　⚫ 灰色=无尺寸特殊款")
 
-        # ========== 下载(合并 CSV:美甲拣货 + B链产品) ==========
-        st.markdown('<div style="margin-top:18px;"></div>', unsafe_allow_html=True)
-
+        # ========== 下载 ==========
         if b_chain_agg:
-            # 拼接：主表 + 空行 + B链标题行 + B链数据行，共用同一列结构
             cols = pivot.columns.tolist()
             empty_row = pd.DataFrame([[""] * len(cols)], columns=cols)
             section_label = pd.DataFrame(
@@ -1062,31 +488,14 @@ else:
             mime="text/csv"
         )
 
-        # ========== B链产品展示区（页面呈现，无单独下载） ==========
+        # ========== B链产品展示区 ==========
         if b_chain_agg:
-            st.markdown('<div class="nv-divider"></div>', unsafe_allow_html=True)
-            st.markdown("""
-            <div class="bchain-wrap">
-                <div class="bchain-header">🛍️ B链产品</div>
-            """, unsafe_allow_html=True)
-
+            st.subheader("🛍️ B链产品")
             b_chain_df = pd.DataFrame(
                 sorted(b_chain_agg.items()),
                 columns=["产品名称", "数量"]
             )
-            st.dataframe(
-                b_chain_df,
-                use_container_width=True,
-                hide_index=True,
-                height=50 + len(b_chain_df) * 38
-            )
-
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.dataframe(b_chain_df, use_container_width=True, hide_index=True)
 
     else:
-        st.markdown("""
-        <div class="status-bar error">
-            <span class="status-icon">❌</span>
-            <span>未识别到任何 SKU。请确认 PDF 为可复制文本(非扫描件)</span>
-        </div>
-        """, unsafe_allow_html=True)
+        st.error("❌ 未识别到任何 SKU。请确认 PDF 为可复制文本(非扫描件)")
